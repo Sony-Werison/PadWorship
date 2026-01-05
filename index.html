@@ -397,7 +397,13 @@
             
                 <div class="slider-group" style="margin-top: 15px;">
                     <span class="panel-label" style="min-width: 60px; margin:0;">Motion</span>
-                    <input type="range" id="motionSlider" min="0" max="100" value="30" title="Intensidade do movimento do som">
+                    <input type="range" id="motionSlider" min="0" max="100" value="30" title="Intensidade do movimento do filtro">
+                </div>
+
+                <!-- Nova Opção de Ambiência L/R -->
+                <div class="slider-group" style="margin-top: 10px;">
+                    <span class="panel-label" style="min-width: 60px; margin:0;">Ambiência L/R</span>
+                    <input type="range" id="ambienceSlider" min="0" max="100" value="0" title="Velocidade da movimentação estéreo (Auto-Pan)">
                 </div>
             </div>
         </div>
@@ -481,6 +487,7 @@
         let currentKey = null;
         let currentPreset = 'warm';
         let motionAmount = 0.3;
+        let ambienceRate = 0; // Nova variável para controle de velocidade L/R
 
         // Frequências para o Synth
         const frequencies = {
@@ -590,15 +597,32 @@
                 filter.frequency.value = layer.filter;
                 filter.Q.value = config.filterQ;
 
+                // Motion LFO (Filter Freq)
                 const lfo = audioCtx.createOscillator();
                 lfo.frequency.value = 0.15 + (Math.random() * 0.25);
                 const lfoGain = audioCtx.createGain();
                 const safeMotion = Number.isFinite(motionAmount) ? motionAmount : 0.3;
                 lfoGain.gain.value = layer.filter * safeMotion; 
-                
                 lfo.connect(lfoGain);
                 lfoGain.connect(filter.frequency);
                 lfo.start(startTime);
+
+                // --- NOVO: Ambiência L/R LFO (Auto-Pan) ---
+                const panLfo = audioCtx.createOscillator();
+                panLfo.type = 'sine';
+                const panLfoGain = audioCtx.createGain();
+                
+                // Configuração inicial do Auto-Pan
+                // Se ambienceRate for 0, o LFO fica parado (freq 0) e profundidade 0
+                const safeAmbienceFreq = Number.isFinite(ambienceRate) ? (ambienceRate / 20) : 0; // 0-100 -> 0-5Hz
+                const safeAmbienceDepth = ambienceRate > 0 ? 0.7 : 0; // Ativa profundidade se tiver velocidade
+
+                panLfo.frequency.value = safeAmbienceFreq;
+                panLfoGain.gain.value = safeAmbienceDepth;
+
+                panLfo.connect(panLfoGain);
+                panLfoGain.connect(panner.pan); // Modula o PAN
+                panLfo.start(startTime);
 
                 gain.gain.setValueAtTime(0, startTime);
                 gain.gain.linearRampToValueAtTime(layer.gain, startTime + config.attack);
@@ -611,7 +635,8 @@
                 panner.connect(masterGain);
 
                 osc.start(startTime);
-                nodes.push({ osc, gain, lfo, lfoGain, filter, config, panner, layer });
+                // Armazena novos nodes (panLfo, panLfoGain) para updates em tempo real
+                nodes.push({ osc, gain, lfo, lfoGain, filter, config, panner, layer, panLfo, panLfoGain });
             });
 
             return {
@@ -625,15 +650,33 @@
                         }
                     });
                 },
+                // Update em tempo real da Ambiência
+                updateAmbience: (newRate) => {
+                    if (!Number.isFinite(newRate)) return;
+                    const now = audioCtx.currentTime;
+                    nodes.forEach(node => {
+                        const newFreq = newRate / 20; // Escala 0-100 para 0-5Hz
+                        const newDepth = newRate > 0 ? 0.7 : 0;
+                        
+                        node.panLfo.frequency.setTargetAtTime(newFreq, now, 0.1);
+                        node.panLfoGain.gain.setTargetAtTime(newDepth, now, 0.1);
+                    });
+                },
                 stop: (stopTime) => {
                     nodes.forEach(node => {
                         const releaseTime = node.config.release;
                         node.gain.gain.cancelScheduledValues(stopTime);
                         node.gain.gain.setValueAtTime(node.gain.gain.value, stopTime);
                         node.gain.gain.exponentialRampToValueAtTime(0.001, stopTime + releaseTime);
+                        
                         node.osc.stop(stopTime + releaseTime + 0.1);
                         node.lfo.stop(stopTime + releaseTime + 0.1);
-                        setTimeout(() => { node.gain.disconnect(); node.panner.disconnect(); }, (releaseTime + 1) * 1000);
+                        node.panLfo.stop(stopTime + releaseTime + 0.1); // Para o pan LFO também
+                        
+                        setTimeout(() => { 
+                            node.gain.disconnect(); 
+                            node.panner.disconnect(); 
+                        }, (releaseTime + 1) * 1000);
                     });
                 }
             };
@@ -854,15 +897,28 @@
 
         const volumeSlider = document.getElementById('volumeSlider');
         const motionSlider = document.getElementById('motionSlider');
+        const ambienceSlider = document.getElementById('ambienceSlider'); // Novo Slider
 
         volumeSlider.addEventListener('input', updateVolume);
         
+        // Listener para Motion (Filtro)
         motionSlider.addEventListener('input', (e) => {
             const rawValue = parseFloat(e.target.value);
             if (!isNaN(rawValue)) {
                 motionAmount = rawValue / 100;
                 if (activeNodes.length > 0 && currentMode === 'synth') {
                     activeNodes.forEach(n => n.updateMotion(motionAmount));
+                }
+            }
+        });
+
+        // Listener para Ambiência (Pan L/R)
+        ambienceSlider.addEventListener('input', (e) => {
+            const rawValue = parseFloat(e.target.value);
+            if (!isNaN(rawValue)) {
+                ambienceRate = rawValue; // 0 a 100
+                if (activeNodes.length > 0 && currentMode === 'synth') {
+                    activeNodes.forEach(n => n.updateAmbience(ambienceRate));
                 }
             }
         });
