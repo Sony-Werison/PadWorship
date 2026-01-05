@@ -615,7 +615,8 @@
                 // Configuração inicial do Auto-Pan
                 // Se ambienceRate for 0, o LFO fica parado (freq 0) e profundidade 0
                 const safeAmbienceFreq = Number.isFinite(ambienceRate) ? (ambienceRate / 20) : 0; // 0-100 -> 0-5Hz
-                const safeAmbienceDepth = ambienceRate > 0 ? 0.7 : 0; // Ativa profundidade se tiver velocidade
+                // AJUSTE: Profundidade reduzida de 0.7 para 0.3 para não "zerar" os lados
+                const safeAmbienceDepth = ambienceRate > 0 ? 0.3 : 0; 
 
                 panLfo.frequency.value = safeAmbienceFreq;
                 panLfoGain.gain.value = safeAmbienceDepth;
@@ -656,7 +657,8 @@
                     const now = audioCtx.currentTime;
                     nodes.forEach(node => {
                         const newFreq = newRate / 20; // Escala 0-100 para 0-5Hz
-                        const newDepth = newRate > 0 ? 0.7 : 0;
+                        // AJUSTE: Profundidade reduzida para 0.3
+                        const newDepth = newRate > 0 ? 0.3 : 0;
                         
                         node.panLfo.frequency.setTargetAtTime(newFreq, now, 0.1);
                         node.panLfoGain.gain.setTargetAtTime(newDepth, now, 0.1);
