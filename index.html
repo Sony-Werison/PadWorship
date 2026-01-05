@@ -126,7 +126,6 @@
             gap: 8px;
             padding-bottom: 5px;
         }
-        /* .sound-selector::-webkit-scrollbar { display: none; } (Não é mais necessário pois não há scroll) */
 
         .preset-btn {
             background: rgba(255,255,255,0.05);
@@ -326,6 +325,13 @@
             color: var(--text-muted);
             text-align: center;
         }
+        
+        .ios-warning {
+            color: #f87171;
+            font-weight: 600;
+            margin-top: 5px;
+            font-size: 0.75rem;
+        }
     </style>
 </head>
 <body>
@@ -395,7 +401,8 @@
     </div>
 
     <footer>
-        <p>Use fones ou sistema de som para ouvir os graves.</p>
+        <p>Use fones ou conecte ao som para ouvir os graves.</p>
+        <p class="ios-warning">iPhone: Verifique se o botão "Silêncio" (lateral) está desligado.</p>
     </footer>
 
     <script>
@@ -414,23 +421,22 @@
             'F#': 185.00, 'G': 196.00, 'Ab': 207.65, 'A': 220.00, 'Bb': 233.08, 'B': 246.94
         };
 
-        // PRESETS EXPANDIDOS
         const presets = {
             warm: {
                 layers: [
                     { type: 'sawtooth', detune: 0, gain: 0.15, filter: 400, pan: 0 },
                     { type: 'sawtooth', detune: 10, gain: 0.15, filter: 400, pan: 0.3 }, 
                     { type: 'sawtooth', detune: -10, gain: 0.15, filter: 400, pan: -0.3 }, 
-                    { type: 'triangle', detune: 0, octave: -1, gain: 0.4, filter: 300, pan: 0 } // Sub
+                    { type: 'triangle', detune: 0, octave: -1, gain: 0.4, filter: 300, pan: 0 }
                 ],
                 attack: 1.5, release: 3.5, filterQ: 1
             },
             shimmer: {
                 layers: [
                     { type: 'sawtooth', detune: 0, gain: 0.08, filter: 2000, pan: 0 },
-                    { type: 'square', detune: 4, octave: 1, gain: 0.04, filter: 3000, pan: 0.6 }, // High shimmer
+                    { type: 'square', detune: 4, octave: 1, gain: 0.04, filter: 3000, pan: 0.6 },
                     { type: 'square', detune: -4, octave: 1, gain: 0.04, filter: 3000, pan: -0.6 },
-                    { type: 'triangle', detune: 0, octave: 2, gain: 0.03, filter: 4000, pan: 0 } // Extra high
+                    { type: 'triangle', detune: 0, octave: 2, gain: 0.03, filter: 4000, pan: 0 }
                 ],
                 attack: 2, release: 5, filterQ: 0.5
             },
@@ -447,17 +453,17 @@
                     { type: 'sawtooth', detune: 0, gain: 0.12, filter: 1200, pan: 0 },
                     { type: 'sawtooth', detune: 5, octave: 0, gain: 0.12, filter: 1200, pan: 0.4 },
                     { type: 'sawtooth', detune: -5, octave: 0, gain: 0.12, filter: 1200, pan: -0.4 },
-                    { type: 'sawtooth', detune: 0, octave: -1, gain: 0.2, filter: 600, pan: 0 } // Cello range
+                    { type: 'sawtooth', detune: 0, octave: -1, gain: 0.2, filter: 600, pan: 0 }
                 ],
                 attack: 0.8, release: 2.5, filterQ: 0.8
             },
             analog: {
                 layers: [
                     { type: 'square', detune: 0, gain: 0.1, filter: 800, pan: 0 },
-                    { type: 'sawtooth', detune: 15, gain: 0.1, filter: 800, pan: 0.2 }, // Heavy detune
+                    { type: 'sawtooth', detune: 15, gain: 0.1, filter: 800, pan: 0.2 },
                     { type: 'sawtooth', detune: -15, gain: 0.1, filter: 800, pan: -0.2 }
                 ],
-                attack: 0.1, release: 3, filterQ: 2 // Resonant
+                attack: 0.1, release: 3, filterQ: 2
             },
             bright: {
                 layers: [
@@ -469,22 +475,66 @@
             }
         };
 
-        function initAudio() {
-            if (!audioCtx) {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext();
-                
-                compressor = audioCtx.createDynamicsCompressor();
-                compressor.threshold.setValueAtTime(-20, audioCtx.currentTime);
-                compressor.ratio.setValueAtTime(10, audioCtx.currentTime);
+        // --- SISTEMA DE UNLOCK PARA MOBILE ---
+        // Adiciona um listener global para o primeiro toque na tela
+        // Isso é crucial para browsers mobile permitirem áudio
+        let audioUnlocked = false;
 
-                masterGain = audioCtx.createGain();
-                masterGain.connect(compressor);
-                compressor.connect(audioCtx.destination);
-                
-                updateVolume();
+        function unlockAudioEngine() {
+            if (audioUnlocked) return;
+            
+            // Inicializa o contexto se não existir
+            if (!audioCtx) initAudioContext();
+
+            // Retoma o contexto se estiver suspenso
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
             }
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            // Toca um buffer silencioso. 
+            // Isso engana o iOS para pensar que o app está tocando som, "desbloqueando" o volume.
+            const buffer = audioCtx.createBuffer(1, 1, 22050);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start(0);
+
+            audioUnlocked = true;
+            
+            // Remove listeners para não executar novamente
+            document.removeEventListener('touchstart', unlockAudioEngine);
+            document.removeEventListener('click', unlockAudioEngine);
+            document.removeEventListener('keydown', unlockAudioEngine);
+        }
+
+        // Adiciona listeners para qualquer interação do usuário
+        document.addEventListener('touchstart', unlockAudioEngine, { passive: false });
+        document.addEventListener('click', unlockAudioEngine);
+        document.addEventListener('keydown', unlockAudioEngine);
+
+
+        function initAudioContext() {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+            
+            compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.setValueAtTime(-20, audioCtx.currentTime);
+            compressor.ratio.setValueAtTime(10, audioCtx.currentTime);
+
+            masterGain = audioCtx.createGain();
+            masterGain.connect(compressor);
+            compressor.connect(audioCtx.destination);
+            
+            updateVolume();
+        }
+
+        function initAudio() {
+            if (!audioCtx) initAudioContext();
+            
+            // Tentativa secundária de resume ao clicar no botão
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
         }
 
         function playNoteLayer(freq, startTime, config) {
@@ -506,12 +556,13 @@
                 filter.frequency.value = layer.filter;
                 filter.Q.value = config.filterQ;
 
-                // Motion LFO (Controlado pelo slider)
                 const lfo = audioCtx.createOscillator();
-                lfo.frequency.value = 0.15 + (Math.random() * 0.25); // Slightly faster range
+                lfo.frequency.value = 0.15 + (Math.random() * 0.25);
                 const lfoGain = audioCtx.createGain();
-                // Calcula valor inicial
-                lfoGain.gain.value = layer.filter * motionAmount; 
+                
+                // Cálculo inicial seguro
+                const safeMotion = Number.isFinite(motionAmount) ? motionAmount : 0.3;
+                lfoGain.gain.value = layer.filter * safeMotion; 
                 
                 lfo.connect(lfoGain);
                 lfoGain.connect(filter.frequency);
@@ -529,23 +580,16 @@
 
                 osc.start(startTime);
 
-                // Armazena lfoGain e LAYER no objeto para permitir updates em tempo real
                 nodes.push({ osc, gain, lfo, lfoGain, filter, config, panner, layer });
             });
 
             return {
-                // Função para atualizar o Motion em tempo real
                 updateMotion: (newAmount) => {
-                    // Proteção: Se o valor não for finito, ignora
                     if (!Number.isFinite(newAmount)) return;
-
                     const now = audioCtx.currentTime;
                     nodes.forEach(node => {
-                        // Verifica se temos acesso à propriedade de filtro da camada
                         if (node.layer && Number.isFinite(node.layer.filter)) {
                             const newGain = node.layer.filter * newAmount;
-                            
-                            // Proteção adicional para garantir que o ganho é válido
                             if (Number.isFinite(newGain)) {
                                 node.lfoGain.gain.setTargetAtTime(newGain, now, 0.1);
                             }
@@ -627,7 +671,6 @@
             }
         }
 
-        // Controles Slider
         const volumeSlider = document.getElementById('volumeSlider');
         const motionSlider = document.getElementById('motionSlider');
 
@@ -635,11 +678,8 @@
         
         motionSlider.addEventListener('input', (e) => {
             const rawValue = parseFloat(e.target.value);
-            // Garante que é um número válido antes de usar
             if (!isNaN(rawValue)) {
                 motionAmount = rawValue / 100;
-                
-                // Atualiza os nós ativos imediatamente
                 if (activeNodes.length > 0) {
                     activeNodes.forEach(n => n.updateMotion(motionAmount));
                 }
