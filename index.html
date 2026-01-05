@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pad Worship Pro</title>
-    <meta name="description" content="App de Pad contínuo para adoração - Sons Profissionais">
+    <meta name="description" content="App de Pad contínuo para adoração - Híbrido (Synth + Samples)">
     <style>
         :root {
             --primary: #a855f7;
@@ -14,6 +14,7 @@
             --glass-border: rgba(255, 255, 255, 0.1);
             --text: #ffffff;
             --text-muted: #a1a1aa;
+            --input-bg: rgba(0, 0, 0, 0.3);
         }
 
         * {
@@ -62,13 +63,17 @@
         /* Header */
         header {
             width: 100%;
-            padding: 30px 20px 10px;
+            padding: 20px;
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
         }
 
         h1 {
             margin: 0;
-            font-size: 2rem;
+            font-size: 1.8rem;
             font-weight: 800;
             letter-spacing: -1px;
             background: linear-gradient(to right, #d8b4fe, #818cf8);
@@ -77,26 +82,40 @@
             text-shadow: 0 0 30px rgba(168, 85, 247, 0.3);
         }
 
-        p.subtitle {
-            margin: 5px 0 0 0;
-            font-size: 0.9rem;
+        /* Toggle Source Button */
+        .source-toggle {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
             color: var(--text-muted);
-            letter-spacing: 1px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
             text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            margin-top: 5px;
+        }
+
+        .source-toggle.active {
+            background: rgba(168, 85, 247, 0.2);
+            color: #d8b4fe;
+            border-color: rgba(168, 85, 247, 0.5);
         }
 
         /* Container Principal */
         .container {
             width: 100%;
             max-width: 600px;
-            padding: 20px;
+            padding: 10px 20px;
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 15px;
         }
 
-        /* Painel de Controle (Presets + Motion) */
+        /* Painel de Controle */
         .control-panel {
             background: var(--glass);
             backdrop-filter: blur(10px);
@@ -106,6 +125,7 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
+            transition: max-height 0.3s ease;
         }
 
         .panel-label {
@@ -115,14 +135,14 @@
             letter-spacing: 1px;
             margin-bottom: 8px;
             display: block;
-            text-align: center; /* Centraliza o texto do rótulo */
+            text-align: center;
         }
 
-        /* Seletor de Som (Centralizado com Wrap) */
+        /* Seletor de Som */
         .sound-selector {
             display: flex;
-            flex-wrap: wrap; /* Permite que os botões quebrem linha se necessário */
-            justify-content: center; /* Centraliza horizontalmente */
+            flex-wrap: wrap;
+            justify-content: center;
             gap: 8px;
             padding-bottom: 5px;
         }
@@ -131,21 +151,16 @@
             background: rgba(255,255,255,0.05);
             border: 1px solid transparent;
             color: var(--text-muted);
-            padding: 10px 16px;
-            font-size: 0.9rem;
+            padding: 8px 12px;
+            font-size: 0.85rem;
             font-weight: 600;
-            border-radius: 10px;
+            border-radius: 8px;
             cursor: pointer;
             transition: all 0.3s ease;
-            white-space: nowrap;
             flex-shrink: 0;
         }
 
-        .preset-btn:hover {
-            background: rgba(255,255,255,0.1);
-            color: white;
-        }
-
+        .preset-btn:hover { background: rgba(255,255,255,0.1); color: white; }
         .preset-btn.active {
             background: rgba(168, 85, 247, 0.2);
             color: #d8b4fe;
@@ -153,11 +168,82 @@
             box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
         }
 
+        /* Botão Configurar Samples */
+        .config-btn {
+            width: 100%;
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #93c5fd;
+            padding: 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: none; /* Hidden by default */
+        }
+        .config-btn:hover { background: rgba(59, 130, 246, 0.25); }
+
+        /* Modal de Configuração */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(5px);
+            z-index: 100;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-overlay.open { display: flex; }
+
+        .modal-content {
+            background: #1e1b4b;
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 20px;
+            width: 100%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-title { font-size: 1.2rem; font-weight: 700; color: white; }
+        .close-btn { background: none; border: none; color: #f87171; font-size: 1.5rem; cursor: pointer; }
+
+        .sample-input-group {
+            display: grid;
+            gap: 10px;
+        }
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .note-label { width: 30px; font-weight: 700; color: #a78bfa; }
+        .drive-input {
+            flex: 1;
+            background: var(--input-bg);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+        .drive-input::placeholder { color: rgba(255,255,255,0.2); }
+
         /* Grid de Botões */
         .pad-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
+            gap: 10px;
         }
 
         .key-btn {
@@ -165,25 +251,18 @@
             backdrop-filter: blur(5px);
             border: 1px solid var(--glass-border);
             color: var(--text);
-            padding: 24px 0;
-            font-size: 1.4rem;
+            padding: 20px 0;
+            font-size: 1.3rem;
             font-weight: 700;
-            border-radius: 16px;
+            border-radius: 14px;
             cursor: pointer;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
         }
 
-        .key-btn:hover {
-            background: rgba(255,255,255,0.1);
-            transform: translateY(-2px);
-        }
-
-        .key-btn:active {
-            transform: scale(0.96);
-        }
-
+        .key-btn:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); }
+        .key-btn:active { transform: scale(0.96); }
         .key-btn.active {
             background: var(--primary);
             border-color: var(--primary);
@@ -191,6 +270,16 @@
             z-index: 10;
         }
         
+        .key-btn.loading {
+            border-color: #fbbf24;
+            color: #fbbf24;
+            animation: pulse-loading 1s infinite;
+        }
+        
+        @keyframes pulse-loading {
+            0% { opacity: 0.5; } 100% { opacity: 1; }
+        }
+
         .key-btn.active::after {
             content: '';
             position: absolute;
@@ -217,18 +306,8 @@
             gap: 20px;
         }
 
-        /* Sliders Customizados */
-        .slider-group {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .slider-label {
-            font-size: 0.9rem;
-            color: var(--text-muted);
-            min-width: 60px;
-        }
+        .slider-group { display: flex; align-items: center; gap: 15px; }
+        .slider-label { font-size: 0.9rem; color: var(--text-muted); min-width: 60px; }
 
         input[type=range] {
             flex: 1;
@@ -241,28 +320,22 @@
 
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 20px;
-            height: 20px;
-            background: white;
-            border-radius: 50%;
+            width: 20px; height: 20px;
+            background: white; border-radius: 50%;
             cursor: pointer;
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
             transition: transform 0.1s;
         }
         
-        input[type=range]::-webkit-slider-thumb:active {
-            transform: scale(1.3);
-            background: var(--primary);
-        }
+        input[type=range]::-webkit-slider-thumb:active { transform: scale(1.3); background: var(--primary); }
 
-        /* Botão Parar */
         .stop-btn {
             width: 100%;
-            padding: 18px;
+            padding: 16px;
             background: rgba(239, 68, 68, 0.15);
             color: #fca5a5;
             border: 1px solid rgba(239, 68, 68, 0.3);
-            border-radius: 14px;
+            border-radius: 12px;
             font-size: 1rem;
             font-weight: 700;
             cursor: pointer;
@@ -271,81 +344,47 @@
             transition: all 0.2s;
         }
 
-        .stop-btn:hover {
-            background: rgba(239, 68, 68, 0.25);
-            box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
-            color: white;
-        }
+        .stop-btn:hover { background: rgba(239, 68, 68, 0.25); color: white; }
+        .stop-btn:active { transform: scale(0.98); }
 
-        .stop-btn:active {
-            transform: scale(0.98);
-        }
-
-        /* Visualizador de Status */
         .status-bar {
-            height: 30px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 10px;
-            opacity: 0;
-            transition: opacity 0.5s;
+            height: 24px;
+            display: flex; justify-content: center; align-items: center; gap: 10px;
+            opacity: 0; transition: opacity 0.5s;
         }
         .status-bar.visible { opacity: 1; }
 
-        .equalizer {
-            display: flex;
-            gap: 2px;
-            height: 15px;
-            align-items: flex-end;
-        }
-        .bar {
-            width: 3px;
-            background: var(--primary);
-            animation: bounce 0.5s infinite ease-in-out;
-        }
+        .equalizer { display: flex; gap: 2px; height: 15px; align-items: flex-end; }
+        .bar { width: 3px; background: var(--primary); animation: bounce 0.5s infinite ease-in-out; }
         .bar:nth-child(2) { animation-duration: 0.6s; height: 60%; }
         .bar:nth-child(3) { animation-duration: 0.4s; height: 80%; }
-        
-        @keyframes bounce {
-            0%, 100% { transform: scaleY(0.3); }
-            50% { transform: scaleY(1); }
-        }
+        @keyframes bounce { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
 
-        .note-display {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: white;
-        }
+        .note-display { font-size: 1.1rem; font-weight: 600; color: white; }
 
-        footer {
-            margin-top: auto;
-            padding: 20px;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            text-align: center;
-        }
+        footer { margin-top: auto; padding: 20px; font-size: 0.8rem; color: var(--text-muted); text-align: center; }
+        .ios-warning { color: #f87171; font-weight: 600; margin-top: 5px; font-size: 0.75rem; }
         
-        .ios-warning {
-            color: #f87171;
-            font-weight: 600;
-            margin-top: 5px;
-            font-size: 0.75rem;
-        }
+        .help-text { font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; line-height: 1.4; }
     </style>
 </head>
 <body>
 
     <header>
         <h1>Pad Worship Pro</h1>
-        <p class="subtitle">Atmosphere Generator</p>
+        <button id="sourceToggle" class="source-toggle" onclick="toggleSource()">Fonte: Sintetizador</button>
     </header>
 
     <div class="container">
         
         <!-- Painel de Configurações -->
         <div class="control-panel">
-            <div>
+            
+            <!-- Botão Configuração de Samples (Só aparece no modo Sample) -->
+            <button id="configSamplesBtn" class="config-btn" onclick="openConfigModal()">⚙️ Configurar Samples (Google Drive)</button>
+
+            <!-- Seletor de Presets (Só aparece no modo Synth) -->
+            <div id="synthControls">
                 <span class="panel-label">Timbre (Preset)</span>
                 <div class="sound-selector" id="presetContainer">
                     <button class="preset-btn active" onclick="setPreset('warm')">Warm</button>
@@ -355,11 +394,11 @@
                     <button class="preset-btn" onclick="setPreset('analog')">Analog</button>
                     <button class="preset-btn" onclick="setPreset('bright')">Bright</button>
                 </div>
-            </div>
             
-            <div class="slider-group">
-                <span class="panel-label" style="min-width: 60px; margin:0;">Motion</span>
-                <input type="range" id="motionSlider" min="0" max="100" value="30" title="Intensidade do movimento do som">
+                <div class="slider-group" style="margin-top: 15px;">
+                    <span class="panel-label" style="min-width: 60px; margin:0;">Motion</span>
+                    <input type="range" id="motionSlider" min="0" max="100" value="30" title="Intensidade do movimento do som">
+                </div>
             </div>
         </div>
 
@@ -373,21 +412,21 @@
 
         <!-- Grid de Notas -->
         <div class="pad-grid">
-            <button class="key-btn" data-note="C" onclick="playPad('C')">C</button>
-            <button class="key-btn" data-note="C#" onclick="playPad('C#')">C#</button>
-            <button class="key-btn" data-note="D" onclick="playPad('D')">D</button>
+            <button class="key-btn" data-note="C" onclick="handleNoteClick('C')">C</button>
+            <button class="key-btn" data-note="C#" onclick="handleNoteClick('C#')">C#</button>
+            <button class="key-btn" data-note="D" onclick="handleNoteClick('D')">D</button>
 
-            <button class="key-btn" data-note="Eb" onclick="playPad('Eb')">Eb</button>
-            <button class="key-btn" data-note="E" onclick="playPad('E')">E</button>
-            <button class="key-btn" data-note="F" onclick="playPad('F')">F</button>
+            <button class="key-btn" data-note="Eb" onclick="handleNoteClick('Eb')">Eb</button>
+            <button class="key-btn" data-note="E" onclick="handleNoteClick('E')">E</button>
+            <button class="key-btn" data-note="F" onclick="handleNoteClick('F')">F</button>
 
-            <button class="key-btn" data-note="F#" onclick="playPad('F#')">F#</button>
-            <button class="key-btn" data-note="G" onclick="playPad('G')">G</button>
-            <button class="key-btn" data-note="Ab" onclick="playPad('Ab')">Ab</button>
+            <button class="key-btn" data-note="F#" onclick="handleNoteClick('F#')">F#</button>
+            <button class="key-btn" data-note="G" onclick="handleNoteClick('G')">G</button>
+            <button class="key-btn" data-note="Ab" onclick="handleNoteClick('Ab')">Ab</button>
 
-            <button class="key-btn" data-note="A" onclick="playPad('A')">A</button>
-            <button class="key-btn" data-note="Bb" onclick="playPad('Bb')">Bb</button>
-            <button class="key-btn" data-note="B" onclick="playPad('B')">B</button>
+            <button class="key-btn" data-note="A" onclick="handleNoteClick('A')">A</button>
+            <button class="key-btn" data-note="Bb" onclick="handleNoteClick('Bb')">Bb</button>
+            <button class="key-btn" data-note="B" onclick="handleNoteClick('B')">B</button>
         </div>
 
         <!-- Volume e Parar -->
@@ -400,146 +439,141 @@
         </div>
     </div>
 
+    <!-- Modal de Configuração de Samples -->
+    <div id="configModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">Configurar Samples (Drive)</span>
+                <button class="close-btn" onclick="closeConfigModal()">×</button>
+            </div>
+            <p class="help-text">
+                Cole o <strong>ID do arquivo</strong> do Google Drive para cada nota. 
+                <br>O arquivo deve estar como "Público" (Qualquer pessoa com o link).
+                <br>Ex: ID "1aBcD..." do link <i>drive.google.com/file/d/<b>1aBcD...</b>/view</i>
+            </p>
+            <div class="sample-input-group" id="sampleInputs">
+                <!-- Gerado via JS -->
+            </div>
+            <button class="stop-btn" style="margin-top: 20px; background: var(--primary);" onclick="saveSampleConfig()">Salvar Configuração</button>
+        </div>
+    </div>
+
     <footer>
         <p>Use fones ou conecte ao som para ouvir os graves.</p>
         <p class="ios-warning">iPhone: Verifique se o botão "Silêncio" (lateral) está desligado.</p>
     </footer>
 
     <script>
-        // --- MOTOR DE ÁUDIO AVANÇADO ---
-        
+        // --- ESTADO GERAL ---
+        let currentMode = 'synth'; // 'synth' | 'sample'
+        const notesList = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+        let sampleConfig = {}; // Armazena IDs do Drive
+        let audioBuffers = {}; // Cache de áudio decodificado
+
+        // --- MOTOR DE ÁUDIO ---
         let audioCtx;
         let masterGain;
         let compressor;
-        let activeNodes = []; 
+        let activeNodes = []; // Nodes do Synth
+        let activeSampleNode = null; // Node do Sample (apenas um por vez, mas com crossfade via gain)
+        let activeSampleGain = null;
+        
         let currentKey = null;
         let currentPreset = 'warm';
-        let motionAmount = 0.3; // Default motion
+        let motionAmount = 0.3;
 
+        // Frequências para o Synth
         const frequencies = {
             'C': 130.81, 'C#': 138.59, 'D': 146.83, 'Eb': 155.56, 'E': 164.81, 'F': 174.61,
             'F#': 185.00, 'G': 196.00, 'Ab': 207.65, 'A': 220.00, 'Bb': 233.08, 'B': 246.94
         };
 
+        // Presets do Synth (Mantidos da versão anterior)
         const presets = {
-            warm: {
-                layers: [
-                    { type: 'sawtooth', detune: 0, gain: 0.15, filter: 400, pan: 0 },
-                    { type: 'sawtooth', detune: 10, gain: 0.15, filter: 400, pan: 0.3 }, 
-                    { type: 'sawtooth', detune: -10, gain: 0.15, filter: 400, pan: -0.3 }, 
-                    { type: 'triangle', detune: 0, octave: -1, gain: 0.4, filter: 300, pan: 0 }
-                ],
-                attack: 1.5, release: 3.5, filterQ: 1
-            },
-            shimmer: {
-                layers: [
-                    { type: 'sawtooth', detune: 0, gain: 0.08, filter: 2000, pan: 0 },
-                    { type: 'square', detune: 4, octave: 1, gain: 0.04, filter: 3000, pan: 0.6 },
-                    { type: 'square', detune: -4, octave: 1, gain: 0.04, filter: 3000, pan: -0.6 },
-                    { type: 'triangle', detune: 0, octave: 2, gain: 0.03, filter: 4000, pan: 0 }
-                ],
-                attack: 2, release: 5, filterQ: 0.5
-            },
-            air: {
-                layers: [
-                    { type: 'sine', detune: 0, gain: 0.5, filter: 3000, pan: 0 },
-                    { type: 'triangle', detune: 8, octave: 1, gain: 0.08, filter: 1500, pan: 0.9 },
-                    { type: 'triangle', detune: -8, octave: 1, gain: 0.08, filter: 1500, pan: -0.9 }
-                ],
-                attack: 3, release: 4, filterQ: 0
-            },
-            strings: {
-                layers: [
-                    { type: 'sawtooth', detune: 0, gain: 0.12, filter: 1200, pan: 0 },
-                    { type: 'sawtooth', detune: 5, octave: 0, gain: 0.12, filter: 1200, pan: 0.4 },
-                    { type: 'sawtooth', detune: -5, octave: 0, gain: 0.12, filter: 1200, pan: -0.4 },
-                    { type: 'sawtooth', detune: 0, octave: -1, gain: 0.2, filter: 600, pan: 0 }
-                ],
-                attack: 0.8, release: 2.5, filterQ: 0.8
-            },
-            analog: {
-                layers: [
-                    { type: 'square', detune: 0, gain: 0.1, filter: 800, pan: 0 },
-                    { type: 'sawtooth', detune: 15, gain: 0.1, filter: 800, pan: 0.2 },
-                    { type: 'sawtooth', detune: -15, gain: 0.1, filter: 800, pan: -0.2 }
-                ],
-                attack: 0.1, release: 3, filterQ: 2
-            },
-            bright: {
-                layers: [
-                    { type: 'triangle', detune: 0, gain: 0.2, filter: 2500, pan: 0 },
-                    { type: 'square', detune: 5, octave: 1, gain: 0.05, filter: 2000, pan: 0.5 },
-                    { type: 'square', detune: -5, octave: 1, gain: 0.05, filter: 2000, pan: -0.5 }
-                ],
-                attack: 0.5, release: 4, filterQ: 0.5
-            }
+            warm: { layers: [{ type: 'sawtooth', detune: 0, gain: 0.15, filter: 400, pan: 0 }, { type: 'sawtooth', detune: 10, gain: 0.15, filter: 400, pan: 0.3 }, { type: 'sawtooth', detune: -10, gain: 0.15, filter: 400, pan: -0.3 }, { type: 'triangle', detune: 0, octave: -1, gain: 0.4, filter: 300, pan: 0 }], attack: 1.5, release: 3.5, filterQ: 1 },
+            shimmer: { layers: [{ type: 'sawtooth', detune: 0, gain: 0.08, filter: 2000, pan: 0 }, { type: 'square', detune: 4, octave: 1, gain: 0.04, filter: 3000, pan: 0.6 }, { type: 'square', detune: -4, octave: 1, gain: 0.04, filter: 3000, pan: -0.6 }, { type: 'triangle', detune: 0, octave: 2, gain: 0.03, filter: 4000, pan: 0 }], attack: 2, release: 5, filterQ: 0.5 },
+            air: { layers: [{ type: 'sine', detune: 0, gain: 0.5, filter: 3000, pan: 0 }, { type: 'triangle', detune: 8, octave: 1, gain: 0.08, filter: 1500, pan: 0.9 }, { type: 'triangle', detune: -8, octave: 1, gain: 0.08, filter: 1500, pan: -0.9 }], attack: 3, release: 4, filterQ: 0 },
+            strings: { layers: [{ type: 'sawtooth', detune: 0, gain: 0.12, filter: 1200, pan: 0 }, { type: 'sawtooth', detune: 5, octave: 0, gain: 0.12, filter: 1200, pan: 0.4 }, { type: 'sawtooth', detune: -5, octave: 0, gain: 0.12, filter: 1200, pan: -0.4 }, { type: 'sawtooth', detune: 0, octave: -1, gain: 0.2, filter: 600, pan: 0 }], attack: 0.8, release: 2.5, filterQ: 0.8 },
+            analog: { layers: [{ type: 'square', detune: 0, gain: 0.1, filter: 800, pan: 0 }, { type: 'sawtooth', detune: 15, gain: 0.1, filter: 800, pan: 0.2 }, { type: 'sawtooth', detune: -15, gain: 0.1, filter: 800, pan: -0.2 }], attack: 0.1, release: 3, filterQ: 2 },
+            bright: { layers: [{ type: 'triangle', detune: 0, gain: 0.2, filter: 2500, pan: 0 }, { type: 'square', detune: 5, octave: 1, gain: 0.05, filter: 2000, pan: 0.5 }, { type: 'square', detune: -5, octave: 1, gain: 0.05, filter: 2000, pan: -0.5 }], attack: 0.5, release: 4, filterQ: 0.5 }
         };
 
-        // --- SISTEMA DE UNLOCK PARA MOBILE ---
-        // Adiciona um listener global para o primeiro toque na tela
-        // Isso é crucial para browsers mobile permitirem áudio
-        let audioUnlocked = false;
+        // --- INICIALIZAÇÃO ---
+        window.addEventListener('load', () => {
+            loadSampleConfig();
+            renderSampleInputs();
+        });
 
+        // --- SISTEMA DE UNLOCK PARA MOBILE ---
+        let audioUnlocked = false;
         function unlockAudioEngine() {
             if (audioUnlocked) return;
-            
-            // Inicializa o contexto se não existir
             if (!audioCtx) initAudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
 
-            // Retoma o contexto se estiver suspenso
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-
-            // Toca um buffer silencioso. 
-            // Isso engana o iOS para pensar que o app está tocando som, "desbloqueando" o volume.
             const buffer = audioCtx.createBuffer(1, 1, 22050);
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
             source.start(0);
-
             audioUnlocked = true;
             
-            // Remove listeners para não executar novamente
             document.removeEventListener('touchstart', unlockAudioEngine);
             document.removeEventListener('click', unlockAudioEngine);
-            document.removeEventListener('keydown', unlockAudioEngine);
         }
-
-        // Adiciona listeners para qualquer interação do usuário
         document.addEventListener('touchstart', unlockAudioEngine, { passive: false });
         document.addEventListener('click', unlockAudioEngine);
-        document.addEventListener('keydown', unlockAudioEngine);
-
 
         function initAudioContext() {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             audioCtx = new AudioContext();
-            
             compressor = audioCtx.createDynamicsCompressor();
             compressor.threshold.setValueAtTime(-20, audioCtx.currentTime);
             compressor.ratio.setValueAtTime(10, audioCtx.currentTime);
-
             masterGain = audioCtx.createGain();
             masterGain.connect(compressor);
             compressor.connect(audioCtx.destination);
-            
             updateVolume();
         }
 
         function initAudio() {
             if (!audioCtx) initAudioContext();
-            
-            // Tentativa secundária de resume ao clicar no botão
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        // --- LÓGICA DE UI ---
+        function toggleSource() {
+            stopPad(); // Para tudo antes de trocar
+            const btn = document.getElementById('sourceToggle');
+            const synthControls = document.getElementById('synthControls');
+            const configBtn = document.getElementById('configSamplesBtn');
+
+            if (currentMode === 'synth') {
+                currentMode = 'sample';
+                btn.innerText = "Fonte: Samples (Drive)";
+                btn.classList.add('active');
+                synthControls.style.display = 'none';
+                configBtn.style.display = 'block';
+            } else {
+                currentMode = 'synth';
+                btn.innerText = "Fonte: Sintetizador";
+                btn.classList.remove('active');
+                synthControls.style.display = 'block';
+                configBtn.style.display = 'none';
             }
         }
 
+        function handleNoteClick(note) {
+            if (currentMode === 'synth') {
+                playSynthPad(note);
+            } else {
+                playSamplePad(note);
+            }
+        }
+
+        // --- LÓGICA DO SYNTH (Mantida) ---
         function playNoteLayer(freq, startTime, config) {
             const nodes = [];
-            
             config.layers.forEach(layer => {
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
@@ -559,8 +593,6 @@
                 const lfo = audioCtx.createOscillator();
                 lfo.frequency.value = 0.15 + (Math.random() * 0.25);
                 const lfoGain = audioCtx.createGain();
-                
-                // Cálculo inicial seguro
                 const safeMotion = Number.isFinite(motionAmount) ? motionAmount : 0.3;
                 lfoGain.gain.value = layer.filter * safeMotion; 
                 
@@ -579,7 +611,6 @@
                 panner.connect(masterGain);
 
                 osc.start(startTime);
-
                 nodes.push({ osc, gain, lfo, lfoGain, filter, config, panner, layer });
             });
 
@@ -590,9 +621,7 @@
                     nodes.forEach(node => {
                         if (node.layer && Number.isFinite(node.layer.filter)) {
                             const newGain = node.layer.filter * newAmount;
-                            if (Number.isFinite(newGain)) {
-                                node.lfoGain.gain.setTargetAtTime(newGain, now, 0.1);
-                            }
+                            if (Number.isFinite(newGain)) node.lfoGain.gain.setTargetAtTime(newGain, now, 0.1);
                         }
                     });
                 },
@@ -602,35 +631,24 @@
                         node.gain.gain.cancelScheduledValues(stopTime);
                         node.gain.gain.setValueAtTime(node.gain.gain.value, stopTime);
                         node.gain.gain.exponentialRampToValueAtTime(0.001, stopTime + releaseTime);
-
                         node.osc.stop(stopTime + releaseTime + 0.1);
                         node.lfo.stop(stopTime + releaseTime + 0.1);
-                        
-                        setTimeout(() => {
-                            node.gain.disconnect();
-                            node.panner.disconnect();
-                        }, (releaseTime + 1) * 1000);
+                        setTimeout(() => { node.gain.disconnect(); node.panner.disconnect(); }, (releaseTime + 1) * 1000);
                     });
                 }
             };
         }
 
-        function playPad(note) {
+        function playSynthPad(note) {
             initAudio();
-
-            document.querySelectorAll('.key-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelector(`button[data-note="${note}"]`).classList.add('active');
-            
-            const statusEl = document.getElementById('status');
-            const noteNameEl = document.getElementById('current-key-name');
-            statusEl.classList.add('visible');
-            noteNameEl.innerText = note + " " + document.querySelector('.preset-btn.active').innerText;
+            updateUiState(note);
 
             if (currentKey === note) return;
             currentKey = note;
 
             const now = audioCtx.currentTime;
             
+            // Fade out antigos
             if (activeNodes.length > 0) {
                 activeNodes.forEach(n => n.stop(now));
                 activeNodes = [];
@@ -646,28 +664,191 @@
             activeNodes.push(note1, note2);
         }
 
+        // --- LÓGICA DE SAMPLES (Google Drive) ---
+        async function playSamplePad(note) {
+            initAudio();
+            updateUiState(note); // UI updates first
+
+            if (currentKey === note) return; // Mesmo som
+            
+            const fileId = sampleConfig[note];
+            if (!fileId) {
+                alert(`Nenhum sample configurado para a nota ${note}. Clique em 'Configurar Samples' e adicione o ID do Google Drive.`);
+                stopPad();
+                return;
+            }
+
+            // Mostra loading na tecla
+            const btn = document.querySelector(`button[data-note="${note}"]`);
+            if(btn) btn.classList.add('loading');
+
+            try {
+                let buffer;
+                // Verifica cache
+                if (audioBuffers[note]) {
+                    buffer = audioBuffers[note];
+                } else {
+                    // Carrega do Drive
+                    // URL de Exportação Direta do Drive
+                    const url = `https://drive.google.com/uc?export=download&id=${fileId}`;
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error("Erro ao baixar. Verifique se o link é público.");
+                    const arrayBuffer = await response.arrayBuffer();
+                    buffer = await audioCtx.decodeAudioData(arrayBuffer);
+                    audioBuffers[note] = buffer; // Salva no cache
+                }
+
+                if(btn) btn.classList.remove('loading');
+
+                // Tocar o Sample
+                const now = audioCtx.currentTime;
+                const fadeTime = 2; // 2 segundos de crossfade
+
+                // 1. Fade out no sample anterior (se houver)
+                if (activeSampleNode && activeSampleGain) {
+                    activeSampleGain.gain.cancelScheduledValues(now);
+                    activeSampleGain.gain.setValueAtTime(activeSampleGain.gain.value, now);
+                    activeSampleGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+                    activeSampleNode.stop(now + fadeTime);
+                }
+
+                // 2. Iniciar novo sample
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.loop = true; // Loop infinito
+
+                const gainNode = audioCtx.createGain();
+                gainNode.gain.setValueAtTime(0, now);
+                gainNode.gain.linearRampToValueAtTime(1, now + fadeTime); // Fade in
+
+                source.connect(gainNode);
+                gainNode.connect(masterGain);
+                
+                source.start(now);
+
+                // Atualizar referências
+                activeSampleNode = source;
+                activeSampleGain = gainNode;
+                currentKey = note;
+
+            } catch (error) {
+                console.error(error);
+                if(btn) btn.classList.remove('loading');
+                alert("Erro ao carregar áudio. Verifique:\n1. O ID do arquivo está correto?\n2. O arquivo está 'Público'?\n3. É um MP3/WAV válido?");
+                stopPad();
+            }
+        }
+
+        // --- FUNÇÕES COMUNS ---
         function stopPad() {
             if (!audioCtx) return;
+            const now = audioCtx.currentTime;
 
-            document.querySelectorAll('.key-btn').forEach(btn => btn.classList.remove('active'));
+            // Stop UI
+            document.querySelectorAll('.key-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.classList.remove('loading');
+            });
             document.getElementById('status').classList.remove('visible');
 
-            const now = audioCtx.currentTime;
+            // Stop Synth
             if (activeNodes.length > 0) {
                 activeNodes.forEach(n => n.stop(now));
                 activeNodes = [];
             }
+
+            // Stop Sample
+            if (activeSampleNode && activeSampleGain) {
+                activeSampleGain.gain.cancelScheduledValues(now);
+                activeSampleGain.gain.setValueAtTime(activeSampleGain.gain.value, now);
+                activeSampleGain.gain.linearRampToValueAtTime(0, now + 2); // Fade out 2s
+                activeSampleNode.stop(now + 2);
+                activeSampleNode = null;
+                activeSampleGain = null;
+            }
+
             currentKey = null;
         }
 
+        function updateUiState(note) {
+            document.querySelectorAll('.key-btn').forEach(btn => btn.classList.remove('active'));
+            const btn = document.querySelector(`button[data-note="${note}"]`);
+            if (btn) btn.classList.add('active');
+            
+            const statusEl = document.getElementById('status');
+            const noteNameEl = document.getElementById('current-key-name');
+            statusEl.classList.add('visible');
+            
+            let sourceText = currentMode === 'synth' 
+                ? document.querySelector('.preset-btn.active').innerText 
+                : 'Sample';
+            
+            noteNameEl.innerText = `${note} (${sourceText})`;
+        }
+
+        // --- CONFIGURAÇÃO DE SAMPLES ---
+        function openConfigModal() {
+            document.getElementById('configModal').classList.add('open');
+        }
+        function closeConfigModal() {
+            document.getElementById('configModal').classList.remove('open');
+        }
+
+        function renderSampleInputs() {
+            const container = document.getElementById('sampleInputs');
+            container.innerHTML = '';
+            notesList.forEach(note => {
+                const val = sampleConfig[note] || '';
+                const html = `
+                    <div class="input-row">
+                        <span class="note-label">${note}</span>
+                        <input type="text" class="drive-input" id="input-${note}" value="${val}" placeholder="Cole o ID do Google Drive aqui...">
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', html);
+            });
+        }
+
+        function saveSampleConfig() {
+            notesList.forEach(note => {
+                const el = document.getElementById(`input-${note}`);
+                // Limpa ID se o usuário colar URL inteira
+                let val = el.value.trim();
+                // Tenta extrair ID se for uma URL completa
+                const match = val.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                if (match) val = match[1];
+                else {
+                    const idMatch = val.match(/id=([a-zA-Z0-9_-]+)/);
+                    if (idMatch) val = idMatch[1];
+                }
+                
+                sampleConfig[note] = val;
+            });
+            localStorage.setItem('padWorshipSampleConfig', JSON.stringify(sampleConfig));
+            // Limpa cache para recarregar novos IDs se mudaram
+            audioBuffers = {}; 
+            closeConfigModal();
+            alert('Configuração Salva!');
+        }
+
+        function loadSampleConfig() {
+            const saved = localStorage.getItem('padWorshipSampleConfig');
+            if (saved) {
+                try {
+                    sampleConfig = JSON.parse(saved);
+                } catch (e) { console.error("Erro ao ler config", e); }
+            }
+        }
+
+        // --- CONTROLES GERAIS ---
         function setPreset(name) {
             currentPreset = name;
             document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelector(`button[onclick="setPreset('${name}')"]`).classList.add('active');
-            if (currentKey) {
+            if (currentKey && currentMode === 'synth') {
                 const savedKey = currentKey;
                 currentKey = null; 
-                playPad(savedKey);
+                playSynthPad(savedKey);
             }
         }
 
@@ -680,7 +861,7 @@
             const rawValue = parseFloat(e.target.value);
             if (!isNaN(rawValue)) {
                 motionAmount = rawValue / 100;
-                if (activeNodes.length > 0) {
+                if (activeNodes.length > 0 && currentMode === 'synth') {
                     activeNodes.forEach(n => n.updateMotion(motionAmount));
                 }
             }
