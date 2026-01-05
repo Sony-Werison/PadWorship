@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pad Worship Pro</title>
+    <meta name="description" content="App de Pad contínuo para adoração - Sons Profissionais">
+    <style>
+        :root {
+            --primary: #a855f7;
+            --primary-glow: rgba(168, 85, 247, 0.5);
+            --bg-dark: #09090b;
+            --glass: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text: #ffffff;
+            --text-muted: #a1a1aa;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 0% 0%, rgba(88, 28, 135, 0.4) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, rgba(59, 130, 246, 0.2) 0%, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Ambient Background Animation */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTAwIDBMMjAwIDEwMEwxMDAgMjAwTDAgMTAwWiIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIvPjwvc3ZnPg==');
+            opacity: 0.3;
+            animation: rotate 60s linear infinite;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Header */
+        header {
+            width: 100%;
+            padding: 30px 20px 10px;
+            text-align: center;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            background: linear-gradient(to right, #d8b4fe, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(168, 85, 247, 0.3);
+        }
+
+        p.subtitle {
+            margin: 5px 0 0 0;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        /* Container Principal */
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Painel de Controle (Presets + Motion) */
+        .control-panel {
+            background: var(--glass);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            display: block;
+            text-align: center; /* Centraliza o texto do rótulo */
+        }
+
+        /* Seletor de Som (Centralizado com Wrap) */
+        .sound-selector {
+            display: flex;
+            flex-wrap: wrap; /* Permite que os botões quebrem linha se necessário */
+            justify-content: center; /* Centraliza horizontalmente */
+            gap: 8px;
+            padding-bottom: 5px;
+        }
+        /* .sound-selector::-webkit-scrollbar { display: none; } (Não é mais necessário pois não há scroll) */
+
+        .preset-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid transparent;
+            color: var(--text-muted);
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .preset-btn:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .preset-btn.active {
+            background: rgba(168, 85, 247, 0.2);
+            color: #d8b4fe;
+            border-color: rgba(168, 85, 247, 0.5);
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
+        }
+
+        /* Grid de Botões */
+        .pad-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .key-btn {
+            background: var(--glass);
+            backdrop-filter: blur(5px);
+            border: 1px solid var(--glass-border);
+            color: var(--text);
+            padding: 24px 0;
+            font-size: 1.4rem;
+            font-weight: 700;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .key-btn:hover {
+            background: rgba(255,255,255,0.1);
+            transform: translateY(-2px);
+        }
+
+        .key-btn:active {
+            transform: scale(0.96);
+        }
+
+        .key-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            box-shadow: 0 0 30px var(--primary-glow);
+            z-index: 10;
+        }
+        
+        .key-btn.active::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle, rgba(255,255,255,0.4) 0%, transparent 70%);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.6; transform: scale(0.8); }
+            50% { opacity: 0; transform: scale(1.5); }
+            100% { opacity: 0; }
+        }
+
+        /* Controles Inferiores */
+        .bottom-controls {
+            background: var(--glass);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 20px;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Sliders Customizados */
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .slider-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            min-width: 60px;
+        }
+
+        input[type=range] {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+        }
+        
+        input[type=range]::-webkit-slider-thumb:active {
+            transform: scale(1.3);
+            background: var(--primary);
+        }
+
+        /* Botão Parar */
+        .stop-btn {
+            width: 100%;
+            padding: 18px;
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 14px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            transition: all 0.2s;
+        }
+
+        .stop-btn:hover {
+            background: rgba(239, 68, 68, 0.25);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+            color: white;
+        }
+
+        .stop-btn:active {
+            transform: scale(0.98);
+        }
+
+        /* Visualizador de Status */
+        .status-bar {
+            height: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+        .status-bar.visible { opacity: 1; }
+
+        .equalizer {
+            display: flex;
+            gap: 2px;
+            height: 15px;
+            align-items: flex-end;
+        }
+        .bar {
+            width: 3px;
+            background: var(--primary);
+            animation: bounce 0.5s infinite ease-in-out;
+        }
+        .bar:nth-child(2) { animation-duration: 0.6s; height: 60%; }
+        .bar:nth-child(3) { animation-duration: 0.4s; height: 80%; }
+        
+        @keyframes bounce {
+            0%, 100% { transform: scaleY(0.3); }
+            50% { transform: scaleY(1); }
+        }
+
+        .note-display {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        footer {
+            margin-top: auto;
+            padding: 20px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Pad Worship Pro</h1>
+        <p class="subtitle">Atmosphere Generator</p>
+    </header>
+
+    <div class="container">
+        
+        <!-- Painel de Configurações -->
+        <div class="control-panel">
+            <div>
+                <span class="panel-label">Timbre (Preset)</span>
+                <div class="sound-selector" id="presetContainer">
+                    <button class="preset-btn active" onclick="setPreset('warm')">Warm</button>
+                    <button class="preset-btn" onclick="setPreset('shimmer')">Shimmer</button>
+                    <button class="preset-btn" onclick="setPreset('air')">Air</button>
+                    <button class="preset-btn" onclick="setPreset('strings')">Strings</button>
+                    <button class="preset-btn" onclick="setPreset('analog')">Analog</button>
+                    <button class="preset-btn" onclick="setPreset('bright')">Bright</button>
+                </div>
+            </div>
+            
+            <div class="slider-group">
+                <span class="panel-label" style="min-width: 60px; margin:0;">Motion</span>
+                <input type="range" id="motionSlider" min="0" max="100" value="30" title="Intensidade do movimento do som">
+            </div>
+        </div>
+
+        <!-- Status Visual -->
+        <div id="status" class="status-bar">
+            <div class="equalizer">
+                <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+            </div>
+            <span class="note-display" id="current-key-name">--</span>
+        </div>
+
+        <!-- Grid de Notas -->
+        <div class="pad-grid">
+            <button class="key-btn" data-note="C" onclick="playPad('C')">C</button>
+            <button class="key-btn" data-note="C#" onclick="playPad('C#')">C#</button>
+            <button class="key-btn" data-note="D" onclick="playPad('D')">D</button>
+
+            <button class="key-btn" data-note="Eb" onclick="playPad('Eb')">Eb</button>
+            <button class="key-btn" data-note="E" onclick="playPad('E')">E</button>
+            <button class="key-btn" data-note="F" onclick="playPad('F')">F</button>
+
+            <button class="key-btn" data-note="F#" onclick="playPad('F#')">F#</button>
+            <button class="key-btn" data-note="G" onclick="playPad('G')">G</button>
+            <button class="key-btn" data-note="Ab" onclick="playPad('Ab')">Ab</button>
+
+            <button class="key-btn" data-note="A" onclick="playPad('A')">A</button>
+            <button class="key-btn" data-note="Bb" onclick="playPad('Bb')">Bb</button>
+            <button class="key-btn" data-note="B" onclick="playPad('B')">B</button>
+        </div>
+
+        <!-- Volume e Parar -->
+        <div class="bottom-controls">
+            <div class="slider-group">
+                <span class="slider-label">Volume</span>
+                <input type="range" id="volumeSlider" min="0" max="100" value="70">
+            </div>
+            <button class="stop-btn" onclick="stopPad()">■ Parar Suavemente</button>
+        </div>
+    </div>
+
+    <footer>
+        <p>Use fones ou sistema de som para ouvir os graves.</p>
+    </footer>
+
+    <script>
+        // --- MOTOR DE ÁUDIO AVANÇADO ---
+        
+        let audioCtx;
+        let masterGain;
+        let compressor;
+        let activeNodes = []; 
+        let currentKey = null;
+        let currentPreset = 'warm';
+        let motionAmount = 0.3; // Default motion
+
+        const frequencies = {
+            'C': 130.81, 'C#': 138.59, 'D': 146.83, 'Eb': 155.56, 'E': 164.81, 'F': 174.61,
+            'F#': 185.00, 'G': 196.00, 'Ab': 207.65, 'A': 220.00, 'Bb': 233.08, 'B': 246.94
+        };
+
+        // PRESETS EXPANDIDOS
+        const presets = {
+            warm: {
+                layers: [
+                    { type: 'sawtooth', detune: 0, gain: 0.15, filter: 400, pan: 0 },
+                    { type: 'sawtooth', detune: 10, gain: 0.15, filter: 400, pan: 0.3 }, 
+                    { type: 'sawtooth', detune: -10, gain: 0.15, filter: 400, pan: -0.3 }, 
+                    { type: 'triangle', detune: 0, octave: -1, gain: 0.4, filter: 300, pan: 0 } // Sub
+                ],
+                attack: 1.5, release: 3.5, filterQ: 1
+            },
+            shimmer: {
+                layers: [
+                    { type: 'sawtooth', detune: 0, gain: 0.08, filter: 2000, pan: 0 },
+                    { type: 'square', detune: 4, octave: 1, gain: 0.04, filter: 3000, pan: 0.6 }, // High shimmer
+                    { type: 'square', detune: -4, octave: 1, gain: 0.04, filter: 3000, pan: -0.6 },
+                    { type: 'triangle', detune: 0, octave: 2, gain: 0.03, filter: 4000, pan: 0 } // Extra high
+                ],
+                attack: 2, release: 5, filterQ: 0.5
+            },
+            air: {
+                layers: [
+                    { type: 'sine', detune: 0, gain: 0.5, filter: 3000, pan: 0 },
+                    { type: 'triangle', detune: 8, octave: 1, gain: 0.08, filter: 1500, pan: 0.9 },
+                    { type: 'triangle', detune: -8, octave: 1, gain: 0.08, filter: 1500, pan: -0.9 }
+                ],
+                attack: 3, release: 4, filterQ: 0
+            },
+            strings: {
+                layers: [
+                    { type: 'sawtooth', detune: 0, gain: 0.12, filter: 1200, pan: 0 },
+                    { type: 'sawtooth', detune: 5, octave: 0, gain: 0.12, filter: 1200, pan: 0.4 },
+                    { type: 'sawtooth', detune: -5, octave: 0, gain: 0.12, filter: 1200, pan: -0.4 },
+                    { type: 'sawtooth', detune: 0, octave: -1, gain: 0.2, filter: 600, pan: 0 } // Cello range
+                ],
+                attack: 0.8, release: 2.5, filterQ: 0.8
+            },
+            analog: {
+                layers: [
+                    { type: 'square', detune: 0, gain: 0.1, filter: 800, pan: 0 },
+                    { type: 'sawtooth', detune: 15, gain: 0.1, filter: 800, pan: 0.2 }, // Heavy detune
+                    { type: 'sawtooth', detune: -15, gain: 0.1, filter: 800, pan: -0.2 }
+                ],
+                attack: 0.1, release: 3, filterQ: 2 // Resonant
+            },
+            bright: {
+                layers: [
+                    { type: 'triangle', detune: 0, gain: 0.2, filter: 2500, pan: 0 },
+                    { type: 'square', detune: 5, octave: 1, gain: 0.05, filter: 2000, pan: 0.5 },
+                    { type: 'square', detune: -5, octave: 1, gain: 0.05, filter: 2000, pan: -0.5 }
+                ],
+                attack: 0.5, release: 4, filterQ: 0.5
+            }
+        };
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+                
+                compressor = audioCtx.createDynamicsCompressor();
+                compressor.threshold.setValueAtTime(-20, audioCtx.currentTime);
+                compressor.ratio.setValueAtTime(10, audioCtx.currentTime);
+
+                masterGain = audioCtx.createGain();
+                masterGain.connect(compressor);
+                compressor.connect(audioCtx.destination);
+                
+                updateVolume();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playNoteLayer(freq, startTime, config) {
+            const nodes = [];
+            
+            config.layers.forEach(layer => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const filter = audioCtx.createBiquadFilter();
+                const panner = audioCtx.createStereoPanner();
+
+                osc.type = layer.type;
+                let finalFreq = freq;
+                if (layer.octave) finalFreq *= Math.pow(2, layer.octave);
+                osc.frequency.value = finalFreq;
+                osc.detune.value = layer.detune;
+
+                filter.type = 'lowpass';
+                filter.frequency.value = layer.filter;
+                filter.Q.value = config.filterQ;
+
+                // Motion LFO (Controlado pelo slider)
+                const lfo = audioCtx.createOscillator();
+                lfo.frequency.value = 0.15 + (Math.random() * 0.25); // Slightly faster range
+                const lfoGain = audioCtx.createGain();
+                // Calcula valor inicial
+                lfoGain.gain.value = layer.filter * motionAmount; 
+                
+                lfo.connect(lfoGain);
+                lfoGain.connect(filter.frequency);
+                lfo.start(startTime);
+
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(layer.gain, startTime + config.attack);
+
+                panner.pan.value = layer.pan;
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(panner);
+                panner.connect(masterGain);
+
+                osc.start(startTime);
+
+                // Armazena lfoGain e LAYER no objeto para permitir updates em tempo real
+                nodes.push({ osc, gain, lfo, lfoGain, filter, config, panner, layer });
+            });
+
+            return {
+                // Função para atualizar o Motion em tempo real
+                updateMotion: (newAmount) => {
+                    // Proteção: Se o valor não for finito, ignora
+                    if (!Number.isFinite(newAmount)) return;
+
+                    const now = audioCtx.currentTime;
+                    nodes.forEach(node => {
+                        // Verifica se temos acesso à propriedade de filtro da camada
+                        if (node.layer && Number.isFinite(node.layer.filter)) {
+                            const newGain = node.layer.filter * newAmount;
+                            
+                            // Proteção adicional para garantir que o ganho é válido
+                            if (Number.isFinite(newGain)) {
+                                node.lfoGain.gain.setTargetAtTime(newGain, now, 0.1);
+                            }
+                        }
+                    });
+                },
+                stop: (stopTime) => {
+                    nodes.forEach(node => {
+                        const releaseTime = node.config.release;
+                        node.gain.gain.cancelScheduledValues(stopTime);
+                        node.gain.gain.setValueAtTime(node.gain.gain.value, stopTime);
+                        node.gain.gain.exponentialRampToValueAtTime(0.001, stopTime + releaseTime);
+
+                        node.osc.stop(stopTime + releaseTime + 0.1);
+                        node.lfo.stop(stopTime + releaseTime + 0.1);
+                        
+                        setTimeout(() => {
+                            node.gain.disconnect();
+                            node.panner.disconnect();
+                        }, (releaseTime + 1) * 1000);
+                    });
+                }
+            };
+        }
+
+        function playPad(note) {
+            initAudio();
+
+            document.querySelectorAll('.key-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`button[data-note="${note}"]`).classList.add('active');
+            
+            const statusEl = document.getElementById('status');
+            const noteNameEl = document.getElementById('current-key-name');
+            statusEl.classList.add('visible');
+            noteNameEl.innerText = note + " " + document.querySelector('.preset-btn.active').innerText;
+
+            if (currentKey === note) return;
+            currentKey = note;
+
+            const now = audioCtx.currentTime;
+            
+            if (activeNodes.length > 0) {
+                activeNodes.forEach(n => n.stop(now));
+                activeNodes = [];
+            }
+
+            const rootFreq = frequencies[note];
+            const fifthFreq = rootFreq * 1.5;
+            const presetConfig = presets[currentPreset];
+
+            const note1 = playNoteLayer(rootFreq, now, presetConfig);
+            const note2 = playNoteLayer(fifthFreq, now, presetConfig);
+
+            activeNodes.push(note1, note2);
+        }
+
+        function stopPad() {
+            if (!audioCtx) return;
+
+            document.querySelectorAll('.key-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('status').classList.remove('visible');
+
+            const now = audioCtx.currentTime;
+            if (activeNodes.length > 0) {
+                activeNodes.forEach(n => n.stop(now));
+                activeNodes = [];
+            }
+            currentKey = null;
+        }
+
+        function setPreset(name) {
+            currentPreset = name;
+            document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`button[onclick="setPreset('${name}')"]`).classList.add('active');
+            if (currentKey) {
+                const savedKey = currentKey;
+                currentKey = null; 
+                playPad(savedKey);
+            }
+        }
+
+        // Controles Slider
+        const volumeSlider = document.getElementById('volumeSlider');
+        const motionSlider = document.getElementById('motionSlider');
+
+        volumeSlider.addEventListener('input', updateVolume);
+        
+        motionSlider.addEventListener('input', (e) => {
+            const rawValue = parseFloat(e.target.value);
+            // Garante que é um número válido antes de usar
+            if (!isNaN(rawValue)) {
+                motionAmount = rawValue / 100;
+                
+                // Atualiza os nós ativos imediatamente
+                if (activeNodes.length > 0) {
+                    activeNodes.forEach(n => n.updateMotion(motionAmount));
+                }
+            }
+        });
+
+        function updateVolume() {
+            if (masterGain) {
+                const val = parseFloat(volumeSlider.value) / 100;
+                masterGain.gain.setTargetAtTime(val * val, audioCtx.currentTime, 0.1);
+            }
+        }
+    </script>
+</body>
+</html>
