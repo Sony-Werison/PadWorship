@@ -63,7 +63,7 @@ const noteToFileNameMap: Partial<Record<Note, string>> = {
 };
 const semitonesFromC: Record<Note, number> = { 'C': 0, 'Db': 1, 'D': 2, 'Eb': 3, 'E': 4, 'F': 5, 'Gb': 6, 'G': 7, 'Ab': 8, 'A': 9, 'Bb': 10, 'B': 11 };
 
-const FADE_TIME = 1.5; // seconds for crossfade and stop
+const FADE_TIME = 5.0; // seconds for crossfade and stop
 
 export default function PadController({ mode }: { mode: 'full' | 'modulation' }) {
     const [isMounted, setIsMounted] = useState(false);
@@ -393,7 +393,11 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             oldPad.padGain.gain.cancelScheduledValues(context.currentTime);
             oldPad.padGain.gain.linearRampToValueAtTime(0.0001, context.currentTime + FADE_TIME);
 
-            setTimeout(() => { try { oldPad.padGain.disconnect(); } catch (e) {} }, FADE_TIME * 1000 + 200);
+            setTimeout(() => { 
+                try {
+                    oldPad.padGain.disconnect();
+                } catch (e) {} 
+            }, FADE_TIME * 1000 + 200);
         }
         
         const padGain = context.createGain();
@@ -401,7 +405,12 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         padGain.connect(masterGainRef.current);
         padGain.gain.linearRampToValueAtTime(1, context.currentTime + FADE_TIME);
         
-        mixGainRef.current.connect(padGain);
+        // This is a shared node, must be cleaned up properly.
+        // Let's create a new mixGain for each pad to avoid conflicts.
+        const newMixGain = context.createGain();
+        newMixGain.gain.value = mix / 100;
+        newMixGain.connect(padGain);
+
 
         const baseLayerGain = context.createGain();
         baseLayerGain.gain.value = layerVolumes.base;
@@ -409,11 +418,11 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
         const tex1LayerGain = context.createGain();
         tex1LayerGain.gain.value = layerVolumes.tex1;
-        tex1LayerGain.connect(mixGainRef.current);
+        tex1LayerGain.connect(newMixGain);
 
         const tex2LayerGain = context.createGain();
         tex2LayerGain.gain.value = layerVolumes.tex2;
-        tex2LayerGain.connect(mixGainRef.current);
+        tex2LayerGain.connect(newMixGain);
 
         const layerGains = { base: baseLayerGain, tex1: tex1LayerGain, tex2: tex2LayerGain };
 
