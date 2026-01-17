@@ -49,7 +49,7 @@ export default function PadController() {
     // Tone.js refs
     const audioCtxReady = useRef(false);
     const masterGain = useRef<Tone.Volume | null>(null);
-    const compressor = useRef<Tone.DynamicsCompressor | null>(null);
+    const compressor = useRef<Tone.Compressor | null>(null);
     const lfo = useRef<Tone.LFO | null>(null);
     const autoPanner = useRef<Tone.AutoPanner | null>(null);
     const synth = useRef<Tone.PolySynth | null>(null);
@@ -87,7 +87,7 @@ export default function PadController() {
             await Tone.start();
             
             masterGain.current = new Tone.Volume(-6).toDestination();
-            compressor.current = new Tone.DynamicsCompressor(-20, 10).connect(masterGain.current);
+            compressor.current = new Tone.Compressor(-20, 10).connect(masterGain.current);
             autoPanner.current = new Tone.AutoPanner('4n').connect(compressor.current).start();
             
             // Setup LFO
