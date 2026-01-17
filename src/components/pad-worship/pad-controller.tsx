@@ -34,6 +34,7 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
+    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_PRESETS, type Preset } from '@/lib/presets';
@@ -595,7 +596,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Cutoff</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Ajusta o brilho do som. Menos brilho cria um som mais suave e escuro.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Define o brilho do som. Menos brilho cria um som mais suave e contido.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
@@ -605,7 +606,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Mix</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Define o volume das camadas de textura que complementam o som principal.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o volume das camadas de textura que complementam o som principal.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
@@ -615,7 +616,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Motion</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona uma leve ondulação ao brilho do som, tornando-o mais dinâmico.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria uma ondulação no brilho, adicionando movimento e dinâmica ao som.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Motion" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
@@ -625,7 +626,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Ambience L/R</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria um movimento panorâmico, movendo o som entre os canais esquerdo e direito.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona um movimento panorâmico que move o som entre os canais esquerdo e direito.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Ambience L/R" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} />
