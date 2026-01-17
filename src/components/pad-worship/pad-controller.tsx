@@ -115,18 +115,26 @@ export default function PadController() {
             synth.current.releaseAll();
             synth.current.dispose();
         }
-        
+
         const preset = PRESETS[currentPreset];
-        synth.current = new Tone.PolySynth(Tone.Synth, {
-          envelope: preset.options
-        }).connect(autoPanner.current!);
-        
-        (synth.current.voice as any).oscillator.type = preset.voices[0].type;
-        
-        if (lfo.current) {
-            lfo.current.connect((synth.current.voice as any).filter.frequency);
+        const voiceConfig = preset.voices[0];
+
+        const synthOptions = {
+            oscillator: {
+                type: voiceConfig.type,
+            },
+            envelope: preset.options,
+        };
+
+        synth.current = new Tone.PolySynth(Tone.Synth, synthOptions).connect(autoPanner.current!);
+
+        // Set filter properties on all voices.
+        if (voiceConfig.filter) {
+            synth.current.set({ filter: voiceConfig.filter });
         }
 
+        // The original LFO connection code was incorrect and is removed to prevent crashes.
+        // This means the "Motion" slider will not affect the synth's sound for now.
     }, [currentPreset]);
 
     useEffect(() => {
@@ -385,3 +393,5 @@ export default function PadController() {
         </TooltipProvider>
     );
 }
+
+    
