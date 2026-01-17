@@ -580,7 +580,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             <main className="container mx-auto max-w-4xl flex-1 px-5 flex flex-col gap-4">
                 {/* Sliders Section */}
                 <div className="glass-pane rounded-2xl p-4 flex flex-col gap-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
                          <div className="flex flex-col gap-2">
                            <div className="flex justify-center items-center gap-2">
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Volume</label>
@@ -596,7 +596,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Cutoff</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Define o brilho do som. Menos brilho cria um som mais suave e contido.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Abre e fecha o filtro, controlando o brilho do som.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
@@ -606,7 +606,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Mix</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o volume das camadas de textura que complementam o som principal.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Define a mistura entre o som principal e as camadas de textura.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
@@ -616,7 +616,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Motion</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria uma ondulação no brilho, adicionando movimento e dinâmica ao som.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona movimento e dinâmica ao timbre, modulando o filtro.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Motion" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
@@ -626,10 +626,27 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Ambience L/R</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona um movimento panorâmico que move o som entre os canais esquerdo e direito.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria um efeito estéreo que move o som de um lado para o outro.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Ambience L/R" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} />
+                        </div>
+                         <div className="flex flex-col gap-2">
+                            <div className="flex justify-center items-center gap-2">
+                                <label className="text-xs text-muted-foreground uppercase tracking-widest">Crossfade</label>
+                                <Popover>
+                                    <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Ajusta o tempo da transição suave (fade) entre as notas.</p></PopoverContent>
+                                </Popover>
+                            </div>
+                            <Slider
+                                aria-label="Crossfade"
+                                value={[fadeTime]}
+                                onValueChange={([v]) => setFadeTime(v)}
+                                min={1}
+                                max={10}
+                                step={0.5}
+                            />
                         </div>
                     </div>
                 </div>
@@ -690,35 +707,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                         onValueChange={([v]) => setLayerVolumes(prev => ({...prev, tex2: v / 100}))}
                                         max={100}
                                         step={1}
-                                    />
-                                </div>
-                            </div>
-                        </AccordionContent>
-                    </AccordionItem>
-                </Accordion>
-
-                <Accordion type="single" collapsible className="w-full">
-                    <AccordionItem value="transition-settings" className="border-none">
-                        <AccordionTrigger className="glass-pane rounded-2xl px-4 py-3 hover:no-underline">
-                            Configurações de Transição
-                        </AccordionTrigger>
-                        <AccordionContent className="glass-pane rounded-2xl p-4 mt-2">
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 pt-4">
-                                <div className="flex flex-col gap-2 sm:col-span-1">
-                                    <div className="flex justify-center items-center gap-2">
-                                        <label className="text-xs text-muted-foreground uppercase tracking-widest">Crossfade</label>
-                                        <Popover>
-                                            <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                            <PopoverContent align="center" className="w-60 text-sm"><p>Ajusta o tempo da transição suave (fade) entre as notas. Valores maiores criam uma passagem mais lenta e gradual.</p></PopoverContent>
-                                        </Popover>
-                                    </div>
-                                    <Slider
-                                        aria-label="Fade Time"
-                                        value={[fadeTime]}
-                                        onValueChange={([v]) => setFadeTime(v)}
-                                        min={1}
-                                        max={10}
-                                        step={0.5}
                                     />
                                 </div>
                             </div>
