@@ -1,13 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import * as Tone from 'tone';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Cog, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { NOTES_LIST, FREQUENCIES, PRESETS, type Note, type PresetName } from '@/lib/audio-config';
-import SampleConfigModal from './sample-config-modal';
+import { NOTES_LIST, type Note } from '@/lib/audio-config';
 import { useToast } from '@/hooks/use-toast';
 import {
   Tooltip,
@@ -16,58 +14,36 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+// Type for the active pad containing audio nodes
+type ActivePad = {
+    note: Note;
+    padGain: GainNode;
+    sources: AudioBufferSourceNode[];
+};
 
-type AppMode = 'synth' | 'sample';
-type SampleConfig = Record<Note, string>;
-type AudioBuffers = Record<Note, Tone.ToneAudioBuffer>;
+const FADE_TIME = 1.5; // seconds for crossfade and stop
 
 export default function PadController() {
     const [isMounted, setIsMounted] = useState(false);
-    const [mode, setMode] = useState<AppMode>('synth');
     const [activeKey, setActiveKey] = useState<Note | null>(null);
     const [volume, setVolume] = useState(70);
     const [cutoff, setCutoff] = useState(100);
     const [mix, setMix] = useState(0);
-    const [currentPreset, setCurrentPreset] = useState<PresetName>('warm');
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [sampleConfig, setSampleConfig] = useState<SampleConfig>(
-        () => NOTES_LIST.reduce((acc, note) => ({ ...acc, [note]: '' }), {} as SampleConfig)
-    );
+    const [loadingNote, setLoadingNote] = useState<Note | null>(null);
 
     const { toast } = useToast();
     
-    // Tone.js refs
-    const audioCtxReady = useRef(false);
-    const masterGain = useRef<Tone.Volume | null>(null);
-    const compressor = useRef<Tone.Compressor | null>(null);
-    const lfo = useRef<Tone.LFO | null>(null);
-    const autoPanner = useRef<Tone.AutoPanner | null>(null);
-    
-    // Synth refs for crossfade
-    const synthA = useRef<Tone.PolySynth | null>(null);
-    const synthB = useRef<Tone.PolySynth | null>(null);
-    const crossFadeNode = useRef<Tone.CrossFade | null>(null);
-    const activeSynthRef = useRef<'A' | 'B'>('A');
+    // Web Audio API refs
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const masterGainRef = useRef<GainNode | null>(null);
+    const cutoffFilterRef = useRef<BiquadFilterNode | null>(null);
+    const mixGainRef = useRef<GainNode | null>(null);
+    const activePadRef = useRef<ActivePad | null>(null);
+    const audioCache = useRef<Record<string, AudioBuffer>>({});
+    const isAudioInitialized = useRef(false);
 
-    // Sample refs
-    const activeSamplePlayer = useRef<Tone.Player | null>(null);
-    const audioBuffers = useRef<Partial<AudioBuffers>>({});
-    const sampleLoadingStatus = useRef<Record<Note, 'idle' | 'loading' | 'loaded' | 'error'>>(
-        NOTES_LIST.reduce((acc, note) => ({ ...acc, [note]: 'idle' }), {} as any)
-    );
-
-    // Load config from localStorage on mount
     useEffect(() => {
         setIsMounted(true);
-        try {
-            const savedConfig = localStorage.getItem('padWorshipSampleConfig');
-            if (savedConfig) {
-                setSampleConfig(JSON.parse(savedConfig));
-            }
-        } catch (e) {
-            console.error("Failed to load sample config from localStorage", e);
-        }
-
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
         if(isIOS) {
              toast({
@@ -77,26 +53,30 @@ export default function PadController() {
         }
     }, [toast]);
     
-    // Initialize Audio Context
     const initAudio = useCallback(async () => {
-        if (audioCtxReady.current) return;
+        if (isAudioInitialized.current || !window.AudioContext) return;
         try {
-            await Tone.start();
-            
-            masterGain.current = new Tone.Volume(-6).toDestination();
-            compressor.current = new Tone.Compressor(-20, 10).connect(masterGain.current);
-            autoPanner.current = new Tone.AutoPanner('4n').connect(compressor.current).start();
-            
-            crossFadeNode.current = new Tone.CrossFade(0).connect(autoPanner.current);
-            
-            lfo.current = new Tone.LFO({
-              frequency: '8n',
-              min: 200,
-              max: 2000,
-              amplitude: 0
-            }).start();
+            const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+            if (context.state === 'suspended') {
+              await context.resume();
+            }
 
-            audioCtxReady.current = true;
+            const masterGain = context.createGain();
+            const cutoffFilter = context.createBiquadFilter();
+            const mixGain = context.createGain();
+
+            cutoffFilter.type = 'lowpass';
+            cutoffFilter.frequency.value = context.sampleRate / 2;
+            
+            masterGain.connect(cutoffFilter);
+            cutoffFilter.connect(context.destination);
+            
+            audioContextRef.current = context;
+            masterGainRef.current = masterGain;
+            cutoffFilterRef.current = cutoffFilter;
+            mixGainRef.current = mixGain;
+
+            isAudioInitialized.current = true;
             console.log('Audio context is ready.');
         } catch (e) {
             console.error('Could not start audio context', e);
@@ -108,179 +88,171 @@ export default function PadController() {
         }
     }, [toast]);
 
-    const setupSynths = useCallback(() => {
-        if (synthA.current) synthA.current.dispose();
-        if (synthB.current) synthB.current.dispose();
-
-        const preset = PRESETS[currentPreset];
-        const voiceConfig = preset.voices[0];
-
-        const synthOptions = {
-            oscillator: { type: voiceConfig.type },
-            envelope: preset.options,
-        };
-
-        const createSynth = () => {
-            const newSynth = new Tone.PolySynth(Tone.Synth, synthOptions);
-            if (voiceConfig.filter) {
-                newSynth.set({ filter: voiceConfig.filter });
-            }
-            return newSynth;
-        }
-        
-        if (!crossFadeNode.current) return;
-        synthA.current = createSynth().connect(crossFadeNode.current.a);
-        synthB.current = createSynth().connect(crossFadeNode.current.b);
-
-    }, [currentPreset]);
+    // Audio Controls Effects
+    useEffect(() => {
+        if (!masterGainRef.current || !audioContextRef.current) return;
+        masterGainRef.current.gain.setTargetAtTime(volume / 100, audioContextRef.current.currentTime, 0.05);
+    }, [volume]);
 
     useEffect(() => {
-        if (!audioCtxReady.current) return;
-        setupSynths();
-    }, [setupSynths, isMounted]);
+        if (!mixGainRef.current || !audioContextRef.current) return;
+        mixGainRef.current.gain.setTargetAtTime(mix / 100, audioContextRef.current.currentTime, 0.05);
+    }, [mix]);
 
-    // Audio Controls Effects
-    useEffect(() => { masterGain.current?.volume.rampTo(Tone.gainToDb(volume / 100), 0.1); }, [volume]);
+    useEffect(() => {
+        if (!cutoffFilterRef.current || !audioContextRef.current) return;
+        // Map 0-100 slider to an exponential frequency range (e.g., 40Hz to 20kHz)
+        const minFreq = 40;
+        const maxFreq = audioContextRef.current.sampleRate / 2;
+        const freq = minFreq * Math.pow(maxFreq / minFreq, cutoff / 100);
+        cutoffFilterRef.current.frequency.setTargetAtTime(freq, audioContextRef.current.currentTime, 0.05);
+    }, [cutoff]);
 
-    const handleSaveConfig = (newConfig: SampleConfig) => {
-        setSampleConfig(newConfig);
-        try {
-            localStorage.setItem('padWorshipSampleConfig', JSON.stringify(newConfig));
-        } catch (e) {
-            console.error("Failed to save sample config", e);
-        }
-        audioBuffers.current = {};
-        Object.keys(sampleLoadingStatus.current).forEach(key => {
-            sampleLoadingStatus.current[key as Note] = 'idle';
+
+    const loadSamples = useCallback(async (note: Note): Promise<AudioBuffer[]> => {
+        const context = audioContextRef.current;
+        if (!context) throw new Error("Audio context not initialized");
+        
+        const noteForPath = encodeURIComponent(note);
+        const paths = [
+            `/audio/${noteForPath} Pad.wav`,
+            `/audio/${noteForPath} Pad2.wav`,
+            `/audio/${noteForPath} Pad3.wav`,
+        ];
+
+        const loadPromises = paths.map(async (path) => {
+            if (audioCache.current[path]) {
+                return audioCache.current[path];
+            }
+            const response = await fetch(path);
+            if (!response.ok) {
+                throw new Error(`Failed to load sample: ${path}`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await context.decodeAudioData(arrayBuffer);
+            audioCache.current[path] = audioBuffer;
+            return audioBuffer;
         });
-    };
 
-    const stopPad = useCallback((fadeTime = 2) => {
-        if (!audioCtxReady.current) return;
-        if (synthA.current) synthA.current.releaseAll();
-        if (synthB.current) synthB.current.releaseAll();
+        return Promise.all(loadPromises);
+    }, []);
 
-        if (activeSamplePlayer.current) {
-            activeSamplePlayer.current.volume.rampTo(-Infinity, fadeTime);
-            activeSamplePlayer.current.stop(`+${fadeTime}`);
-            activeSamplePlayer.current = null;
-        }
+    const stopPad = useCallback(() => {
+        const context = audioContextRef.current;
+        if (!context || !activePadRef.current) return;
+
+        const { padGain, sources } = activePadRef.current;
+        const stopTime = context.currentTime + FADE_TIME;
+        
+        padGain.gain.cancelScheduledValues(context.currentTime);
+        padGain.gain.linearRampToValueAtTime(0, stopTime);
+
+        sources.forEach(source => {
+          try {
+            source.stop(stopTime)
+          } catch (e) {
+            // may already be stopped
+          }
+        });
+        
+        activePadRef.current = null;
         setActiveKey(null);
     }, []);
-    
-    const playSynthNote = useCallback((note: Note) => {
-        if (!crossFadeNode.current || !synthA.current || !synthB.current) {
-            setupSynths();
-        }
-        if (!crossFadeNode.current || !synthA.current || !synthB.current) return;
 
-        const frequency = FREQUENCIES[note];
-        const fadeTime = 1.5;
+    const playPad = useCallback(async (note: Note) => {
+        const context = audioContextRef.current;
+        if (!context || !masterGainRef.current || !mixGainRef.current) return;
 
-        const inactiveSynth = activeSynthRef.current === 'A' ? synthB.current : synthA.current;
-        const activeSynth = activeSynthRef.current === 'A' ? synthA.current : synthB.current;
-        const nextFadeVal = activeSynthRef.current === 'A' ? 1 : 0;
-        
-        inactiveSynth.triggerAttack([frequency, frequency/2]);
-        crossFadeNode.current.fade.rampTo(nextFadeVal, fadeTime);
-        activeSynth.releaseAll();
-
-        activeSynthRef.current = activeSynthRef.current === 'A' ? 'B' : 'A';
-    }, [setupSynths]);
-
-    const playSampleNote = useCallback(async (note: Note) => {
-        const fileId = sampleConfig[note];
-        if (!fileId) {
-            toast({ variant: 'destructive', title: 'Sample não configurado', description: `Não há um sample do Google Drive configurado para a nota ${note}.` });
-            setActiveKey(null);
-            return;
-        }
-
-        const stopCurrentSample = (fadeTime: number) => {
-            if (activeSamplePlayer.current) {
-                const oldPlayer = activeSamplePlayer.current;
-                oldPlayer.volume.rampTo(-Infinity, fadeTime);
-                oldPlayer.stop(`+${fadeTime}`);
-                activeSamplePlayer.current = null;
-            }
-        };
-
-        stopCurrentSample(1.5);
+        setLoadingNote(note);
 
         try {
-            let buffer = audioBuffers.current[note];
-            if (!buffer) {
-                sampleLoadingStatus.current[note] = 'loading';
-                setActiveKey(note); 
-                
-                const url = `https://docs.google.com/uc?export=download&id=${fileId}`;
-                
-                buffer = await new Promise<Tone.ToneAudioBuffer>((resolve, reject) => {
-                  const playerForLoad = new Tone.Player(url, () => {
-                      resolve(playerForLoad.buffer);
-                      playerForLoad.dispose();
-                  }, (err) => {
-                      reject(err)
-                  }).toDestination();
+            const [baseBuffer, tex1Buffer, tex2Buffer] = await loadSamples(note);
+            
+            // If another note is playing, fade it out
+            if (activePadRef.current) {
+                const oldPad = activePadRef.current;
+                const stopTime = context.currentTime + FADE_TIME;
+                oldPad.padGain.gain.cancelScheduledValues(context.currentTime);
+                oldPad.padGain.gain.linearRampToValueAtTime(0, stopTime);
+                oldPad.sources.forEach(source => {
+                  try {
+                    source.stop(stopTime)
+                  } catch(e) {
+                    // may already be stopped
+                  }
                 });
-                
-                audioBuffers.current[note] = buffer;
-                sampleLoadingStatus.current[note] = 'loaded';
             }
             
-            const newPlayer = new Tone.Player(buffer).connect(compressor.current!);
-            newPlayer.loop = true;
-            newPlayer.volume.value = -Infinity;
-            newPlayer.start(Tone.now());
-            newPlayer.volume.rampTo(0, 1.5);
+            // Create new nodes for the new pad
+            const padGain = context.createGain();
+            padGain.gain.value = 0;
+            padGain.connect(masterGainRef.current);
 
-            activeSamplePlayer.current = newPlayer;
+            const baseSource = context.createBufferSource();
+            baseSource.buffer = baseBuffer;
+            baseSource.loop = true;
+
+            const tex1Source = context.createBufferSource();
+            tex1Source.buffer = tex1Buffer;
+            tex1Source.loop = true;
+            
+            const tex2Source = context.createBufferSource();
+            tex2Source.buffer = tex2Buffer;
+            tex2Source.loop = true;
+
+            // Connect sources to graph
+            baseSource.connect(padGain);
+            tex1Source.connect(mixGainRef.current);
+            tex2Source.connect(mixGainRef.current);
+            mixGainRef.current.connect(padGain);
+
+            // Start all sources and fade in
+            const startTime = context.currentTime;
+            baseSource.start(startTime);
+            tex1Source.start(startTime);
+            tex2Source.start(startTime);
+            
+            padGain.gain.linearRampToValueAtTime(1, startTime + FADE_TIME);
+
+            // Update active pad state
+            const newPad: ActivePad = {
+                note,
+                padGain,
+                sources: [baseSource, tex1Source, tex2Source]
+            };
+
+            activePadRef.current = newPad;
+            setActiveKey(note);
 
         } catch (error) {
-            console.error(`Error loading sample for note ${note}:`, error);
-            sampleLoadingStatus.current[note] = 'error';
-            toast({ variant: 'destructive', title: 'Erro ao carregar sample', description: `Não foi possível carregar o áudio para a nota ${note}. Verifique o ID e as permissões do arquivo.` });
-            stopCurrentSample(0.1);
-            setActiveKey(null);
+            console.error(`Error playing note ${note}:`, error);
+            toast({
+                variant: 'destructive',
+                title: 'Erro ao Carregar Sample',
+                description: `Não foi possível encontrar os arquivos para a nota ${note}. Verifique se os arquivos estão na pasta /public/audio.`
+            });
+            if (activePadRef.current?.note === note) {
+                activePadRef.current = null;
+                setActiveKey(null);
+            }
+        } finally {
+            setLoadingNote(null);
         }
 
-    }, [sampleConfig, toast]);
+    }, [loadSamples, toast]);
+
 
     const handleNoteClick = async (note: Note) => {
         await initAudio();
-        if (!audioCtxReady.current) return;
-
+        if (!isAudioInitialized.current) return;
+        
         if (activeKey === note) {
             stopPad();
-            return;
-        }
-
-        if (mode === 'synth') {
-            playSynthNote(note);
         } else {
-            await playSampleNote(note);
+            playPad(note);
         }
-        setActiveKey(note);
     };
-
-    const toggleMode = () => {
-        stopPad(0.1);
-        setMode(prev => (prev === 'synth' ? 'sample' : 'synth'));
-    };
-
-    const getNoteButtonClass = (note: Note) => {
-        if (mode === 'sample') {
-            const status = sampleLoadingStatus.current[note];
-            if (status === 'loading' && activeKey === note) {
-                return 'animate-pulse-loading border-yellow-400 text-yellow-400';
-            }
-             if (status === 'error') {
-                return 'border-red-500/50 text-red-500/80';
-            }
-        }
-        return '';
-    };
-
+    
     if (!isMounted) {
       return (
         <div className="flex h-screen w-screen items-center justify-center">
@@ -295,15 +267,6 @@ export default function PadController() {
                 <h1 className="text-3xl font-extrabold tracking-tighter bg-gradient-to-r from-purple-300 to-indigo-400 text-transparent bg-clip-text">
                     Pad Worship Pro
                 </h1>
-                <Button 
-                    onClick={toggleMode} 
-                    variant="outline"
-                    className={cn("rounded-full border-white/20 bg-black/20 hover:bg-black/40 text-muted-foreground hover:text-foreground font-semibold uppercase tracking-wider text-xs px-4 py-2 h-auto",
-                        mode === 'sample' && 'bg-primary/20 text-purple-300 border-primary/50'
-                    )}
-                >
-                    Fonte: {mode === 'synth' ? 'Sintetizador' : 'Samples (Drive)'}
-                </Button>
             </header>
 
             <main className="container mx-auto max-w-2xl flex-1 px-5 flex flex-col gap-4">
@@ -324,32 +287,13 @@ export default function PadController() {
                     </div>
                 </div>
 
-                <div className="glass-pane rounded-2xl p-4 flex flex-col gap-4 transition-all">
-                    {mode === 'sample' ? (
-                        <Button onClick={() => setIsModalOpen(true)} variant="outline" className="w-full bg-accent/20 border-accent/50 text-blue-300 hover:bg-accent/30 hover:text-white font-semibold">
-                            <Cog className="mr-2 h-4 w-4" /> Configurar Samples (Google Drive)
-                        </Button>
-                    ) : (
-                        <div id="synthControls">
-                            <label className="text-xs text-muted-foreground uppercase tracking-widest text-center block mb-3">Timbre (Preset)</label>
-                            <div className="flex flex-wrap justify-center gap-2">
-                                {Object.keys(PRESETS).map(p => (
-                                    <Button key={p} variant="ghost" size="sm" onClick={() => setCurrentPreset(p as PresetName)} className={cn("font-semibold", currentPreset === p && 'bg-primary/20 text-purple-300 border border-primary/50')}>
-                                        {p.charAt(0).toUpperCase() + p.slice(1)}
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                <div className={cn("h-6 flex justify-center items-center gap-2.5 transition-opacity", activeKey ? 'opacity-100' : 'opacity-0')}>
+                <div className={cn("h-6 flex justify-center items-center gap-2.5 transition-opacity", activeKey || loadingNote ? 'opacity-100' : 'opacity-0')}>
                     <div className="flex gap-0.5 h-4 items-end">
                         <div className="w-1 bg-primary animate-bounce [animation-delay:-0.3s]"></div>
                         <div className="w-1 bg-primary animate-bounce [animation-delay:-0.15s]"></div>
                         <div className="w-1 bg-primary animate-bounce"></div>
                     </div>
-                    <span className="text-lg font-bold text-white">{activeKey || '--'}</span>
+                    <span className="text-lg font-bold text-white">{activeKey || loadingNote || '--'}</span>
                 </div>
                 
                 <div className="grid grid-cols-3 gap-2.5">
@@ -363,18 +307,17 @@ export default function PadController() {
                                     "glass-pane relative overflow-hidden rounded-xl py-5 text-xl font-bold transition-all duration-200 hover:bg-white/10 active:scale-95 active:duration-100",
                                     "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                                     activeKey === note && "bg-primary border-primary shadow-[0_0_30px_theme(colors.primary.DEFAULT)] z-10",
-                                    getNoteButtonClass(note)
+                                    loadingNote === note && 'animate-pulse-loading border-yellow-400 text-yellow-400'
                                 )}
+                                disabled={loadingNote !== null && loadingNote !== note}
                             >
-                                {note}
+                                {loadingNote === note ? <Loader2 className="h-6 w-6 animate-spin mx-auto"/> : note}
                                 {activeKey === note && <div className="absolute inset-0 bg-radial-gradient from-white/40 to-transparent animate-pulse-glow"></div>}
                             </button>
                             </TooltipTrigger>
-                            {mode === 'sample' && sampleLoadingStatus.current[note] === 'error' && (
-                                <TooltipContent>
-                                    <p>Erro ao carregar sample.</p>
-                                </TooltipContent>
-                            )}
+                            <TooltipContent>
+                                <p>Tocar nota {note}</p>
+                            </TooltipContent>
                         </Tooltip>
                     ))}
                 </div>
@@ -383,13 +326,6 @@ export default function PadController() {
             <footer className="mt-auto p-5 text-center text-xs text-muted-foreground">
                 <p>Use fones ou conecte ao som para ouvir os graves.</p>
             </footer>
-
-            <SampleConfigModal
-                open={isModalOpen}
-                onOpenChange={setIsModalOpen}
-                initialConfig={sampleConfig}
-                onSave={handleSaveConfig}
-            />
         </TooltipProvider>
     );
 }
