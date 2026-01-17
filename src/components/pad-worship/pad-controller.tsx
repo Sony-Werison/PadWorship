@@ -364,10 +364,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         padGain.gain.cancelScheduledValues(context.currentTime);
         padGain.gain.linearRampToValueAtTime(0.0001, stopTime);
 
-        if (mixGainRef.current) {
-            try { mixGainRef.current.disconnect(padGain); } catch (e) {}
-        }
-
         setTimeout(() => { try { padGain.disconnect(); } catch (e) {} }, FADE_TIME * 1000 + 200);
         
         activePadRef.current = null;
@@ -397,9 +393,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             oldPad.padGain.gain.cancelScheduledValues(context.currentTime);
             oldPad.padGain.gain.linearRampToValueAtTime(0.0001, context.currentTime + FADE_TIME);
 
-            if (mixGainRef.current) {
-                try { mixGainRef.current.disconnect(oldPad.padGain); } catch (e) {}
-            }
             setTimeout(() => { try { oldPad.padGain.disconnect(); } catch (e) {} }, FADE_TIME * 1000 + 200);
         }
         
@@ -557,57 +550,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             </header>
 
             <main className="container mx-auto max-w-4xl flex-1 px-5 flex flex-col gap-4">
-                {/* Presets Section */}
-                <div className="glass-pane rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-4">
-                    <div className="w-full sm:w-auto sm:flex-1">
-                        <Select value={activePresetName} onValueChange={handlePresetSelect}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Selecione um preset" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {presets.map(p => <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button variant="outline" size="icon"><Save className="h-4 w-4" /></Button>
-                            </PopoverTrigger>
-                            <PopoverContent align="end" className="w-auto p-0">
-                                <div className="p-4">
-                                    <p className="text-sm font-medium">Salvar Preset</p>
-                                    <p className="text-sm text-muted-foreground">Salvar as configurações atuais como um novo preset ou sobrescrever um existente.</p>
-                                     <Button size="sm" className="w-full mt-4" onClick={() => { setNewPresetName(activePresetName); setIsSaveDialogOpen(true); }}>
-                                        Abrir Caixa de Salvar
-                                    </Button>
-                                </div>
-                            </PopoverContent>
-                        </Popover>
-                         <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="icon" disabled={presets.find(p => p.name === activePresetName) === DEFAULT_PRESETS.find(d => d.name === activePresetName) && activePresetName === 'Padrão'}>
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                        Esta ação não pode ser desfeita. O preset "{activePresetName}" será excluído permanentemente.
-                                    </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction onClick={handleDeletePreset}>Excluir</AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-                        <Button variant="outline" size="icon" onClick={handleExportPresets}><Download className="h-4 w-4" /></Button>
-                        <Button variant="outline" size="icon" onClick={() => importFileRef.current?.click()}><Upload className="h-4 w-4" /></Button>
-                    </div>
-                </div>
-
                 {/* Sliders Section */}
                 <div className="glass-pane rounded-2xl p-4 flex flex-col gap-4">
                     <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-4">
@@ -663,8 +605,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                         </div>
                     </div>
                 </div>
-
-                <div className="my-3"></div>
                 
                 <div className="grid grid-cols-3 gap-2.5">
                     {NOTES_LIST.map(note => (
@@ -683,7 +623,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                     ))}
                 </div>
                 
-                <div className="my-3"></div>
                 <Accordion type="single" collapsible className="w-full">
                     <AccordionItem value="item-1" className="border-none">
                         <AccordionTrigger className="glass-pane rounded-2xl px-4 py-3 hover:no-underline">
@@ -726,7 +665,65 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                     </AccordionItem>
                 </Accordion>
 
-
+                {/* Presets Section */}
+                 <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="presets" className="border-none">
+                        <AccordionTrigger className="glass-pane rounded-2xl px-4 py-3 hover:no-underline">
+                           Gerenciamento de Presets
+                        </AccordionTrigger>
+                        <AccordionContent className="glass-pane rounded-2xl p-4 mt-2">
+                            <div className="flex flex-col sm:flex-row items-center gap-4 w-full">
+                                <div className="w-full sm:w-auto sm:flex-1">
+                                    <Select value={activePresetName} onValueChange={handlePresetSelect}>
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Selecione um preset" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {presets.map(p => <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" size="icon"><Save className="h-4 w-4" /></Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent align="end" className="w-auto p-0">
+                                            <div className="p-4">
+                                                <p className="text-sm font-medium">Salvar Preset</p>
+                                                <p className="text-sm text-muted-foreground">Salvar as configurações atuais como um novo preset ou sobrescrever um existente.</p>
+                                                 <Button size="sm" className="w-full mt-4" onClick={() => { setNewPresetName(activePresetName); setIsSaveDialogOpen(true); }}>
+                                                    Abrir Caixa de Salvar
+                                                </Button>
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                     <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="destructive" size="icon" disabled={presets.find(p => p.name === activePresetName) === DEFAULT_PRESETS.find(d => d.name === activePresetName) && activePresetName === 'Padrão'}>
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    Esta ação não pode ser desfeita. O preset "{activePresetName}" será excluído permanentemente.
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                                <AlertDialogAction onClick={handleDeletePreset}>Excluir</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                    <Button variant="outline" size="icon" onClick={handleExportPresets}><Download className="h-4 w-4" /></Button>
+                                    <Button variant="outline" size="icon" onClick={() => importFileRef.current?.click()}><Upload className="h-4 w-4" /></Button>
+                                </div>
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                </Accordion>
             </main>
 
             <footer className="mt-auto p-5 text-center text-xs text-muted-foreground">
