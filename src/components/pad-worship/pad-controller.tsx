@@ -40,21 +40,20 @@ import { Input } from "@/components/ui/input";
 import { DEFAULT_PRESETS, type Preset } from '@/lib/presets';
 
 
-// Type for the active pad containing audio nodes
 type ActivePad = {
     note: Note;
     padGain: GainNode;
     stopScheduler: () => void;
 };
 
-// Map flat notes to sharp filenames
 const noteToFileNameMap: Partial<Record<Note, string>> = {
     'Ab': 'G#', 'Bb': 'A#', 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#',
 };
+const semitonesFromC: Record<Note, number> = { 'C': 0, 'Db': 1, 'D': 2, 'Eb': 3, 'E': 4, 'F': 5, 'Gb': 6, 'G': 7, 'Ab': 8, 'A': 9, 'Bb': 10, 'B': 11 };
 
 const FADE_TIME = 1.5; // seconds for crossfade and stop
 
-export default function PadController() {
+export default function PadController({ mode }: { mode: 'full' | 'modulation' }) {
     const [isMounted, setIsMounted] = useState(false);
     const [activeKey, setActiveKey] = useState<Note | null>(null);
     const [volume, setVolume] = useState(70);
@@ -74,7 +73,6 @@ export default function PadController() {
 
     const { toast } = useToast();
     
-    // Web Audio API refs
     const audioContextRef = useRef<AudioContext | null>(null);
     const masterGainRef = useRef<GainNode | null>(null);
     const cutoffFilterRef = useRef<BiquadFilterNode | null>(null);
@@ -94,7 +92,6 @@ export default function PadController() {
             const savedPresets = localStorage.getItem('padWorshipPresets');
             const loadedPresets = savedPresets ? JSON.parse(savedPresets) : DEFAULT_PRESETS;
             setPresets(loadedPresets);
-            // Apply the first preset or default on initial load
             const initialPreset = loadedPresets[0] || DEFAULT_PRESETS[0];
             if (initialPreset) {
                 handlePresetSelect(initialPreset.name, loadedPresets);
@@ -222,6 +219,7 @@ export default function PadController() {
              toast({
                 title: 'Aviso para iOS',
                 description: 'No iPhone/iPad, verifique se o botão "Silêncio" (lateral) está desligado.',
+                duration: 6000,
             });
         }
     }, [toast]);
@@ -274,41 +272,44 @@ export default function PadController() {
         }
     }, [toast]);
 
-    useEffect(() => {
-        const preloadAllSamples = async () => {
-            await initAudio();
-            if (!audioContextRef.current || !isMounted) return;
+    const preloadSamples = useCallback(async () => {
+        await initAudio();
+        if (!audioContextRef.current || !isMounted) return;
 
-            const totalSamples = NOTES_LIST.length * 3;
-            let loadedCount = 0;
+        const notesToLoad = mode === 'full' ? NOTES_LIST : ['C'];
+        const totalSamples = notesToLoad.length * 3;
+        let loadedCount = 0;
 
-            for (const note of NOTES_LIST) {
-                const fileNameNote = noteToFileNameMap[note] || note;
-                const noteForPath = encodeURIComponent(fileNameNote);
-                const paths = [`/audio/${noteForPath} Pad.wav`, `/audio/${noteForPath} Pad2.wav`, `/audio/${noteForPath} Pad3.wav`];
+        for (const note of notesToLoad) {
+            const fileNameNote = noteToFileNameMap[note] || note;
+            const noteForPath = encodeURIComponent(fileNameNote);
+            const paths = [`/audio/${noteForPath} Pad.wav`, `/audio/${noteForPath} Pad2.wav`, `/audio/${noteForPath} Pad3.wav`];
 
-                for (const path of paths) {
-                    try {
-                        if (!audioCache.current[path]) {
-                            const response = await fetch(path);
-                            if (response.ok) {
-                                const arrayBuffer = await response.arrayBuffer();
-                                audioCache.current[path] = await audioContextRef.current.decodeAudioData(arrayBuffer);
-                            }
+            for (const path of paths) {
+                try {
+                    if (!audioCache.current[path]) {
+                        const response = await fetch(path);
+                        if (response.ok) {
+                            const arrayBuffer = await response.arrayBuffer();
+                            audioCache.current[path] = await audioContextRef.current.decodeAudioData(arrayBuffer);
+                        } else {
+                             throw new Error(`Failed to fetch: ${response.statusText}`);
                         }
-                    } catch (error) {
-                        console.error(`Error preloading sample at ${path}:`, error);
-                    } finally {
-                        loadedCount++;
-                        setLoadingProgress((loadedCount / totalSamples) * 100);
                     }
+                } catch (error) {
+                    console.error(`Error preloading sample at ${path}:`, error);
+                } finally {
+                    loadedCount++;
+                    setLoadingProgress((loadedCount / totalSamples) * 100);
                 }
             }
-            setIsReady(true);
-        };
+        }
+        setIsReady(true);
+    }, [isMounted, initAudio, mode]);
 
-        if(isMounted) preloadAllSamples();
-    }, [isMounted, initAudio]);
+    useEffect(() => {
+        if(isMounted) preloadSamples();
+    }, [isMounted, preloadSamples]);
 
     // Audio Controls Effects
     useEffect(() => { if (masterGainRef.current && audioContextRef.current) masterGainRef.current.gain.setTargetAtTime(volume / 100, audioContextRef.current.currentTime, 0.05); }, [volume]);
@@ -346,8 +347,10 @@ export default function PadController() {
         const context = audioContextRef.current;
         if (!context || !masterGainRef.current || !mixGainRef.current) return;
         
-        const fileNameNote = noteToFileNameMap[note] || note;
+        const noteForSamples = mode === 'modulation' ? 'C' : note;
+        const fileNameNote = noteToFileNameMap[noteForSamples] || noteForSamples;
         const noteForPath = encodeURIComponent(fileNameNote);
+
         const baseBuffer = audioCache.current[`/audio/${noteForPath} Pad.wav`];
         const tex1Buffer = audioCache.current[`/audio/${noteForPath} Pad2.wav`];
         const tex2Buffer = audioCache.current[`/audio/${noteForPath} Pad3.wav`];
@@ -372,17 +375,21 @@ export default function PadController() {
         
         mixGainRef.current.connect(padGain);
 
+        const playbackRate = mode === 'modulation' ? Math.pow(2, semitonesFromC[note] / 12) : 1;
+
         let isLooping = true;
         const timeouts: number[] = [];
 
         const scheduler = (startTime: number) => {
             if (!isLooping) return;
+            
             const duration = baseBuffer.duration;
+            const effectiveDuration = duration / playbackRate;
             const crossfade = FADE_TIME;
 
-            playIteration(startTime, duration, crossfade);
+            playIteration(startTime, effectiveDuration, crossfade);
 
-            const nextStartTime = startTime + duration - crossfade;
+            const nextStartTime = startTime + effectiveDuration - crossfade;
             const delay = (nextStartTime - context.currentTime) * 1000;
 
             const timeoutId = window.setTimeout(() => scheduler(nextStartTime), delay > 0 ? delay : 0);
@@ -393,8 +400,9 @@ export default function PadController() {
             [baseBuffer, tex1Buffer, tex2Buffer].forEach((buffer, index) => {
                 const source = context.createBufferSource();
                 source.buffer = buffer;
-                const isTexture = index > 0;
+                source.playbackRate.value = playbackRate;
 
+                const isTexture = index > 0;
                 const iterGain = context.createGain();
                 source.connect(iterGain);
                 iterGain.connect(isTexture ? mixGainRef.current! : padGain);
@@ -405,7 +413,7 @@ export default function PadController() {
                 iterGain.gain.linearRampToValueAtTime(0, startTime + duration);
 
                 source.start(startTime);
-                source.onended = () => iterGain.disconnect();
+                source.onended = () => { try { iterGain.disconnect(); } catch(e) {} };
             });
         }
 
@@ -431,7 +439,9 @@ export default function PadController() {
         <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-background p-4">
             <Loader2 className="h-12 w-12 animate-spin text-primary"/>
             <div className="w-full max-w-sm text-center">
-                <p className="text-lg font-semibold text-foreground">Carregando samples...</p>
+                <p className="text-lg font-semibold text-foreground">
+                    Carregando samples... ({mode === 'modulation' ? 'Modo Rápido' : 'Modo Qualidade'})
+                </p>
                 <p className="text-sm text-muted-foreground">Isso pode levar um momento.</p>
                 <Progress value={loadingProgress} className="mt-4" />
             </div>
@@ -484,7 +494,20 @@ export default function PadController() {
                         </Select>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" onClick={() => setNewPresetName(activePresetName) || setIsSaveDialogOpen(true)}><Save className="h-4 w-4" /></Button>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" size="icon"><Save className="h-4 w-4" /></Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <div className="p-4">
+                                    <p className="text-sm font-medium">Salvar Preset</p>
+                                    <p className="text-sm text-muted-foreground">Salvar as configurações atuais como um novo preset ou sobrescrever um existente.</p>
+                                     <Button size="sm" className="w-full mt-4" onClick={() => setNewPresetName(activePresetName) || setIsSaveDialogOpen(true)}>
+                                        Abrir Caixa de Salvar
+                                    </Button>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
                          <AlertDialog>
                             <AlertDialogTrigger asChild>
                                 <Button variant="destructive" size="icon" disabled={presets.find(p => p.name === activePresetName) === DEFAULT_PRESETS.find(d => d.name === activePresetName) && activePresetName === 'Padrão'}>
