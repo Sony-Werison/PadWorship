@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, HelpCircle, Download, Upload, Save, Trash2 } from 'lucide-react';
+import { Loader2, HelpCircle, Download, Upload, Save, Trash2, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NOTES_LIST, type Note } from '@/lib/audio-config';
 import { useToast } from '@/hooks/use-toast';
@@ -38,11 +38,23 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_PRESETS, type Preset } from '@/lib/presets';
+import { useRouter } from 'next/navigation';
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from "@/components/ui/accordion";
 
 
 type ActivePad = {
     note: Note;
     padGain: GainNode;
+    layerGains: {
+        base: GainNode;
+        tex1: GainNode;
+        tex2: GainNode;
+    };
     stopScheduler: () => void;
 };
 
@@ -58,7 +70,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const [activeKey, setActiveKey] = useState<Note | null>(null);
     const [volume, setVolume] = useState(70);
     const [cutoff, setCutoff] = useState(80);
-    const [mix, setMix] = useState(0);
+    const [mix, setMix] = useState(50);
     const [motion, setMotion] = useState(20);
     const [ambience, setAmbience] = useState(30);
     const [isReady, setIsReady] = useState(false);
@@ -70,6 +82,11 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
     const [newPresetName, setNewPresetName] = useState("");
     const importFileRef = useRef<HTMLInputElement | null>(null);
+
+    // New State
+    const router = useRouter();
+    const [isBackDialogOpen, setIsBackDialogOpen] = useState(false);
+    const [layerVolumes, setLayerVolumes] = useState({ base: 1, tex1: 0.7, tex2: 0.7 });
 
     const { toast } = useToast();
     
@@ -325,6 +342,16 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         const frequency = minValue * Math.pow(maxValue / minValue, Math.pow(normalizedValue, C));
         cutoffFilterRef.current.frequency.setTargetAtTime(frequency, audioContextRef.current.currentTime, 0.05);
     }, [cutoff]);
+     useEffect(() => {
+        if (activePadRef.current && audioContextRef.current) {
+            const { layerGains } = activePadRef.current;
+            const now = audioContextRef.current.currentTime;
+            layerGains.base.gain.setTargetAtTime(layerVolumes.base, now, 0.05);
+            layerGains.tex1.gain.setTargetAtTime(layerVolumes.tex1, now, 0.05);
+            layerGains.tex2.gain.setTargetAtTime(layerVolumes.tex2, now, 0.05);
+        }
+    }, [layerVolumes]);
+
 
     const stopPad = useCallback(() => {
         const context = audioContextRef.current;
@@ -375,6 +402,20 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         
         mixGainRef.current.connect(padGain);
 
+        const baseLayerGain = context.createGain();
+        baseLayerGain.gain.value = layerVolumes.base;
+        baseLayerGain.connect(padGain);
+
+        const tex1LayerGain = context.createGain();
+        tex1LayerGain.gain.value = layerVolumes.tex1;
+        tex1LayerGain.connect(mixGainRef.current);
+
+        const tex2LayerGain = context.createGain();
+        tex2LayerGain.gain.value = layerVolumes.tex2;
+        tex2LayerGain.connect(mixGainRef.current);
+
+        const layerGains = { base: baseLayerGain, tex1: tex1LayerGain, tex2: tex2LayerGain };
+
         const playbackRate = mode === 'modulation' ? Math.pow(2, semitonesFromC[note] / 12) : 1;
 
         let isLooping = true;
@@ -402,10 +443,16 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                 source.buffer = buffer;
                 source.playbackRate.value = playbackRate;
 
-                const isTexture = index > 0;
                 const iterGain = context.createGain();
                 source.connect(iterGain);
-                iterGain.connect(isTexture ? mixGainRef.current! : padGain);
+
+                if (index === 0) {
+                    iterGain.connect(layerGains.base);
+                } else if (index === 1) {
+                    iterGain.connect(layerGains.tex1);
+                } else {
+                    iterGain.connect(layerGains.tex2);
+                }
 
                 iterGain.gain.setValueAtTime(0, startTime);
                 iterGain.gain.linearRampToValueAtTime(1, startTime + crossfade);
@@ -413,7 +460,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                 iterGain.gain.linearRampToValueAtTime(0, startTime + duration);
 
                 source.start(startTime);
-                source.onended = () => { try { iterGain.disconnect(); } catch(e) {} };
+                source.onended = () => { try { iterGain.disconnect(); source.disconnect(); } catch(e) {} };
             });
         }
 
@@ -421,7 +468,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         
         scheduler(context.currentTime);
 
-        activePadRef.current = { note, padGain, stopScheduler };
+        activePadRef.current = { note, padGain, layerGains, stopScheduler };
         setActiveKey(note);
     };
 
@@ -473,8 +520,29 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             </DialogContent>
         </Dialog>
 
+        <AlertDialog open={isBackDialogOpen} onOpenChange={setIsBackDialogOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Sair da página?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Você tem certeza que quer voltar para a tela de seleção? O áudio será interrompido.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => {
+                        stopPad();
+                        router.push('/');
+                    }}>Sair</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
         <div className="flex flex-col items-center min-h-screen overflow-x-hidden">
-            <header className="w-full p-5 text-center flex flex-col items-center gap-2.5">
+            <header className="container mx-auto max-w-4xl p-5 flex items-center justify-center relative">
+                 <Button variant="outline" size="icon" className="absolute left-5 top-1/2 -translate-y-1/2" onClick={() => setIsBackDialogOpen(true)}>
+                    <ArrowLeft className="h-4 w-4"/>
+                </Button>
                 <h1 className="text-3xl font-extrabold tracking-tighter bg-gradient-to-r from-purple-300 to-indigo-400 text-transparent bg-clip-text">
                     Pad Worship Pro
                 </h1>
@@ -498,11 +566,11 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="icon"><Save className="h-4 w-4" /></Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
+                            <PopoverContent align="end" className="w-auto p-0">
                                 <div className="p-4">
                                     <p className="text-sm font-medium">Salvar Preset</p>
                                     <p className="text-sm text-muted-foreground">Salvar as configurações atuais como um novo preset ou sobrescrever um existente.</p>
-                                     <Button size="sm" className="w-full mt-4" onClick={() => setNewPresetName(activePresetName) || setIsSaveDialogOpen(true)}>
+                                     <Button size="sm" className="w-full mt-4" onClick={() => { setNewPresetName(activePresetName); setIsSaveDialogOpen(true); }}>
                                         Abrir Caixa de Salvar
                                     </Button>
                                 </div>
@@ -540,7 +608,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Volume</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent className="w-60 text-sm"><p>Controla o volume geral do pad.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o volume geral do pad.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Volume" value={[volume]} onValueChange={([v]) => setVolume(v)} max={100} step={1} />
@@ -550,7 +618,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Cutoff</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent className="w-60 text-sm"><p>Controla o filtro de frequências (Low-Pass). Abaixe para um som mais abafado.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o filtro de frequências (Low-Pass). Abaixe para um som mais abafado.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
@@ -560,7 +628,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Mix</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent className="w-60 text-sm"><p>Controla o volume das camadas de textura/atmosfera.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o volume das camadas de textura/atmosfera.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
@@ -570,7 +638,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Motion</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent className="w-60 text-sm"><p>Adiciona uma leve flutuação ao som (LFO no filtro).</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona uma leve flutuação ao som (LFO no filtro).</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Motion" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
@@ -580,7 +648,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Ambience L/R</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent className="w-60 text-sm"><p>Cria um efeito de panorâmica automática (AutoPanner).</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria um efeito de panorâmica automática (AutoPanner).</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Ambience L/R" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} />
@@ -599,13 +667,58 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                             className={cn(
                                 "glass-pane relative overflow-hidden rounded-xl py-5 text-xl font-bold transition-all duration-200 hover:bg-white/10 active:scale-95 active:duration-100",
                                 "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                                activeKey === note && "bg-primary border-primary shadow-[0_0_30px_theme(colors.primary.DEFAULT)] z-10"
+                                activeKey === note && "bg-primary/80 border-primary shadow-[0_0_20px_theme(colors.primary.DEFAULT)] z-10"
                             )}
                         >
                             {note}
                         </button>
                     ))}
                 </div>
+                
+                <div className="my-3"></div>
+                <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="item-1" className="border-none">
+                        <AccordionTrigger className="glass-pane rounded-2xl px-4 py-3 hover:no-underline">
+                            Controles de Camada Individuais
+                        </AccordionTrigger>
+                        <AccordionContent className="glass-pane rounded-2xl p-4 mt-2">
+                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 pt-4">
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-xs text-center text-muted-foreground uppercase tracking-widest">Base</label>
+                                    <Slider
+                                        aria-label="Volume Base"
+                                        value={[layerVolumes.base * 100]}
+                                        onValueChange={([v]) => setLayerVolumes(prev => ({...prev, base: v / 100}))}
+                                        max={100}
+                                        step={1}
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-xs text-center text-muted-foreground uppercase tracking-widest">Textura 1</label>
+                                    <Slider
+                                        aria-label="Volume Textura 1"
+                                        value={[layerVolumes.tex1 * 100]}
+                                        onValueChange={([v]) => setLayerVolumes(prev => ({...prev, tex1: v / 100}))}
+                                        max={100}
+                                        step={1}
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-xs text-center text-muted-foreground uppercase tracking-widest">Textura 2</label>
+                                    <Slider
+                                        aria-label="Volume Textura 2"
+                                        value={[layerVolumes.tex2 * 100]}
+                                        onValueChange={([v]) => setLayerVolumes(prev => ({...prev, tex2: v / 100}))}
+                                        max={100}
+                                        step={1}
+                                    />
+                                </div>
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                </Accordion>
+
+
             </main>
 
             <footer className="mt-auto p-5 text-center text-xs text-muted-foreground">
