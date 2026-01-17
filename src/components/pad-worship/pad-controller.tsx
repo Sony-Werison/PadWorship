@@ -37,6 +37,8 @@ export default function PadController() {
     const [isMounted, setIsMounted] = useState(false);
     const [activeKey, setActiveKey] = useState<Note | null>(null);
     const [volume, setVolume] = useState(70);
+    const [cutoff, setCutoff] = useState(80);
+    const [mix, setMix] = useState(0);
     const [motion, setMotion] = useState(20);
     const [ambience, setAmbience] = useState(30);
     const [isReady, setIsReady] = useState(false);
@@ -79,8 +81,7 @@ export default function PadController() {
 
             const masterGain = context.createGain();
             const cutoffFilter = context.createBiquadFilter();
-            const mixGain = context.createGain(); // For texture layers
-            mixGain.gain.value = 1; // Textures at full volume
+            const mixGain = context.createGain();
 
             // Motion (LFO for filter)
             const lfo = context.createOscillator();
@@ -102,7 +103,6 @@ export default function PadController() {
             pannerLfo.start();
 
             cutoffFilter.type = 'lowpass';
-            cutoffFilter.frequency.value = 12000; // Start with a high cutoff
             
             masterGain.connect(cutoffFilter);
             cutoffFilter.connect(panner);
@@ -181,6 +181,22 @@ export default function PadController() {
         if (!masterGainRef.current || !audioContextRef.current) return;
         masterGainRef.current.gain.setTargetAtTime(volume / 100, audioContextRef.current.currentTime, 0.05);
     }, [volume]);
+
+    useEffect(() => {
+        if (!cutoffFilterRef.current || !audioContextRef.current) return;
+        // Map slider value (0-100) to a logarithmic frequency range (e.g., 20Hz to 20000Hz)
+        const minValue = 40;
+        const maxValue = audioContextRef.current.sampleRate / 2;
+        const C = 2; // Curve steepness
+        const normalizedValue = cutoff / 100;
+        const frequency = minValue * Math.pow(maxValue / minValue, Math.pow(normalizedValue, C));
+        cutoffFilterRef.current.frequency.setTargetAtTime(frequency, audioContextRef.current.currentTime, 0.05);
+    }, [cutoff]);
+
+    useEffect(() => {
+        if (!mixGainRef.current || !audioContextRef.current) return;
+        mixGainRef.current.gain.setTargetAtTime(mix / 100, audioContextRef.current.currentTime, 0.05);
+    }, [mix]);
 
     useEffect(() => {
         if (!lfoGainRef.current || !audioContextRef.current) return;
@@ -329,9 +345,9 @@ export default function PadController() {
                 </h1>
             </header>
 
-            <main className="container mx-auto max-w-2xl flex-1 px-5 flex flex-col gap-4">
+            <main className="container mx-auto max-w-4xl flex-1 px-5 flex flex-col gap-4">
                 <div className="glass-pane rounded-2xl p-4 flex flex-col gap-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-4">
                         <div className="flex flex-col gap-2">
                            <div className="flex justify-center items-center gap-2">
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Volume</label>
@@ -347,6 +363,38 @@ export default function PadController() {
                                 </Tooltip>
                             </div>
                             <Slider aria-label="Volume" value={[volume]} onValueChange={([v]) => setVolume(v)} max={100} step={1} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <div className="flex justify-center items-center gap-2">
+                                <label className="text-xs text-muted-foreground uppercase tracking-widest">Cutoff</label>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button className="text-muted-foreground transition-colors hover:text-foreground">
+                                            <HelpCircle className="h-4 w-4" />
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Controla o filtro de frequências (Low-Pass). Abaixe para um som mais abafado.</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </div>
+                            <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <div className="flex justify-center items-center gap-2">
+                                <label className="text-xs text-muted-foreground uppercase tracking-widest">Mix</label>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button className="text-muted-foreground transition-colors hover:text-foreground">
+                                            <HelpCircle className="h-4 w-4" />
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                       <p>Controla o volume das camadas de textura/atmosfera.</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </div>
+                            <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
                         </div>
                         <div className="flex flex-col gap-2">
                             <div className="flex justify-center items-center gap-2">
@@ -399,7 +447,6 @@ export default function PadController() {
                                 )}
                             >
                                 {note}
-                                {activeKey === note && <div className="absolute inset-0 bg-radial-gradient from-white/40 to-transparent animate-pulse-glow"></div>}
                             </button>
                             </TooltipTrigger>
                             <TooltipContent>
