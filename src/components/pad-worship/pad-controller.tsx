@@ -13,6 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Progress } from '@/components/ui/progress';
 
 // Type for the active pad containing audio nodes
 type ActivePad = {
@@ -25,7 +26,9 @@ type ActivePad = {
 const noteToFileNameMap: Partial<Record<Note, string>> = {
     'Ab': 'G#',
     'Bb': 'A#',
+    'Db': 'C#',
     'Eb': 'D#',
+    'Gb': 'F#',
 };
 
 const FADE_TIME = 1.5; // seconds for crossfade and stop
@@ -36,7 +39,8 @@ export default function PadController() {
     const [volume, setVolume] = useState(70);
     const [cutoff, setCutoff] = useState(100);
     const [mix, setMix] = useState(0);
-    const [loadingNote, setLoadingNote] = useState<Note | null>(null);
+    const [isReady, setIsReady] = useState(false);
+    const [loadingProgress, setLoadingProgress] = useState(0);
 
     const { toast } = useToast();
     
@@ -95,6 +99,52 @@ export default function PadController() {
         }
     }, [toast]);
 
+    useEffect(() => {
+        const preloadAllSamples = async () => {
+            await initAudio();
+            if (!audioContextRef.current || !isMounted) return;
+
+            const totalSamples = NOTES_LIST.length * 3;
+            let loadedCount = 0;
+
+            for (const note of NOTES_LIST) {
+                const fileNameNote = noteToFileNameMap[note] || note;
+                const noteForPath = encodeURIComponent(fileNameNote);
+                const paths = [
+                    `/audio/${noteForPath} Pad.wav`,
+                    `/audio/${noteForPath} Pad2.wav`,
+                    `/audio/${noteForPath} Pad3.wav`,
+                ];
+
+                for (const path of paths) {
+                    try {
+                        if (!audioCache.current[path]) {
+                            const response = await fetch(path);
+                            if (response.ok) {
+                                const arrayBuffer = await response.arrayBuffer();
+                                const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+                                audioCache.current[path] = audioBuffer;
+                            } else {
+                                console.error(`Failed to preload sample: ${path}`);
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`Error preloading sample at ${path}:`, error);
+                    } finally {
+                        loadedCount++;
+                        setLoadingProgress((loadedCount / totalSamples) * 100);
+                    }
+                }
+            }
+            setIsReady(true);
+        };
+
+        if(isMounted) {
+            preloadAllSamples();
+        }
+    }, [isMounted, initAudio]);
+
+
     // Audio Controls Effects
     useEffect(() => {
         if (!masterGainRef.current || !audioContextRef.current) return;
@@ -114,59 +164,6 @@ export default function PadController() {
         const freq = minFreq * Math.pow(maxFreq / minFreq, cutoff / 100);
         cutoffFilterRef.current.frequency.setTargetAtTime(freq, audioContextRef.current.currentTime, 0.05);
     }, [cutoff]);
-
-
-    const loadSamples = useCallback(async (note: Note): Promise<AudioBuffer[]> => {
-        const context = audioContextRef.current;
-        if (!context) throw new Error("Audio context not initialized");
-        
-        const fileNameNote = noteToFileNameMap[note] || note;
-        const noteForPath = encodeURIComponent(fileNameNote);
-        const paths = [
-            `/audio/${noteForPath} Pad.wav`,
-            `/audio/${noteForPath} Pad2.wav`,
-            `/audio/${noteForPath} Pad3.wav`,
-        ];
-
-        const loadPromises = paths.map(async (path) => {
-            if (audioCache.current[path]) {
-                return audioCache.current[path];
-            }
-            const response = await fetch(path);
-            if (!response.ok) {
-                throw new Error(`Failed to load sample: ${path}`);
-            }
-            const arrayBuffer = await response.arrayBuffer();
-            const audioBuffer = await context.decodeAudioData(arrayBuffer);
-            audioCache.current[path] = audioBuffer;
-            return audioBuffer;
-        });
-
-        return Promise.all(loadPromises);
-    }, []);
-
-    const preloadNote = useCallback(async (note: Note) => {
-        const fileNameNote = noteToFileNameMap[note] || note;
-        const firstSamplePath = `/audio/${encodeURIComponent(fileNameNote)} Pad.wav`;
-        
-        // Return if already cached or is currently being loaded by a click
-        if (audioCache.current[firstSamplePath] || loadingNote === note) {
-            return;
-        }
-
-        try {
-            if (!isAudioInitialized.current) {
-                await initAudio();
-            }
-            // Silently preload
-            await loadSamples(note);
-        } catch (error) {
-            // Preloading is best-effort, so we don't show an error toast here.
-            // The user will get a proper error if they click a broken sample.
-            console.error(`Failed to preload samples for ${note}:`, error);
-        }
-    }, [initAudio, loadSamples, loadingNote]);
-
 
     const stopPad = useCallback(() => {
         const context = audioContextRef.current;
@@ -190,91 +187,87 @@ export default function PadController() {
         setActiveKey(null);
     }, []);
 
-    const playPad = useCallback(async (note: Note) => {
+    const playPad = (note: Note) => {
         const context = audioContextRef.current;
         if (!context || !masterGainRef.current || !mixGainRef.current) return;
+        
+        const fileNameNote = noteToFileNameMap[note] || note;
+        const noteForPath = encodeURIComponent(fileNameNote);
+        const baseBuffer = audioCache.current[`/audio/${noteForPath} Pad.wav`];
+        const tex1Buffer = audioCache.current[`/audio/${noteForPath} Pad2.wav`];
+        const tex2Buffer = audioCache.current[`/audio/${noteForPath} Pad3.wav`];
 
-        setLoadingNote(note);
-
-        try {
-            const [baseBuffer, tex1Buffer, tex2Buffer] = await loadSamples(note);
-            
-            // If another note is playing, fade it out
-            if (activePadRef.current) {
-                const oldPad = activePadRef.current;
-                const stopTime = context.currentTime + FADE_TIME;
-                oldPad.padGain.gain.cancelScheduledValues(context.currentTime);
-                oldPad.padGain.gain.linearRampToValueAtTime(0, stopTime);
-                oldPad.sources.forEach(source => {
-                  try {
-                    source.stop(stopTime)
-                  } catch(e) {
-                    // may already be stopped
-                  }
-                });
-            }
-            
-            // Create new nodes for the new pad
-            const padGain = context.createGain();
-            padGain.gain.value = 0;
-            padGain.connect(masterGainRef.current);
-
-            const baseSource = context.createBufferSource();
-            baseSource.buffer = baseBuffer;
-            baseSource.loop = true;
-
-            const tex1Source = context.createBufferSource();
-            tex1Source.buffer = tex1Buffer;
-            tex1Source.loop = true;
-            
-            const tex2Source = context.createBufferSource();
-            tex2Source.buffer = tex2Buffer;
-            tex2Source.loop = true;
-
-            // Connect sources to graph
-            baseSource.connect(padGain);
-            tex1Source.connect(mixGainRef.current);
-            tex2Source.connect(mixGainRef.current);
-            mixGainRef.current.connect(padGain);
-
-            // Start all sources and fade in
-            const startTime = context.currentTime;
-            baseSource.start(startTime);
-            tex1Source.start(startTime);
-            tex2Source.start(startTime);
-            
-            padGain.gain.linearRampToValueAtTime(1, startTime + FADE_TIME);
-
-            // Update active pad state
-            const newPad: ActivePad = {
-                note,
-                padGain,
-                sources: [baseSource, tex1Source, tex2Source]
-            };
-
-            activePadRef.current = newPad;
-            setActiveKey(note);
-
-        } catch (error) {
-            console.error(`Error playing note ${note}:`, error);
+        if (!baseBuffer || !tex1Buffer || !tex2Buffer) {
             toast({
                 variant: 'destructive',
                 title: 'Erro ao Carregar Sample',
                 description: `Não foi possível encontrar os arquivos para a nota ${note}. Verifique se os arquivos estão na pasta /public/audio.`
             });
-            if (activePadRef.current?.note === note) {
-                activePadRef.current = null;
-                setActiveKey(null);
-            }
-        } finally {
-            setLoadingNote(null);
+            return;
         }
+            
+        // If another note is playing, fade it out
+        if (activePadRef.current) {
+            const oldPad = activePadRef.current;
+            const stopTime = context.currentTime + FADE_TIME;
+            oldPad.padGain.gain.cancelScheduledValues(context.currentTime);
+            oldPad.padGain.gain.linearRampToValueAtTime(0, stopTime);
+            oldPad.sources.forEach(source => {
+                try {
+                source.stop(stopTime)
+                } catch(e) {
+                // may already be stopped
+                }
+            });
+        }
+        
+        // Create new nodes for the new pad
+        const padGain = context.createGain();
+        padGain.gain.value = 0;
+        padGain.connect(masterGainRef.current);
 
-    }, [loadSamples, toast]);
+        const baseSource = context.createBufferSource();
+        baseSource.buffer = baseBuffer;
+        baseSource.loop = true;
+
+        const tex1Source = context.createBufferSource();
+        tex1Source.buffer = tex1Buffer;
+        tex1Source.loop = true;
+        
+        const tex2Source = context.createBufferSource();
+        tex2Source.buffer = tex2Buffer;
+        tex2Source.loop = true;
+
+        // Connect sources to graph
+        baseSource.connect(padGain);
+        tex1Source.connect(mixGainRef.current);
+        tex2Source.connect(mixGainRef.current);
+        mixGainRef.current.connect(padGain);
+
+        // Start all sources and fade in
+        const startTime = context.currentTime;
+        baseSource.start(startTime);
+        tex1Source.start(startTime);
+        tex2Source.start(startTime);
+        
+        padGain.gain.linearRampToValueAtTime(1, startTime + FADE_TIME);
+
+        // Update active pad state
+        const newPad: ActivePad = {
+            note,
+            padGain,
+            sources: [baseSource, tex1Source, tex2Source]
+        };
+
+        activePadRef.current = newPad;
+        setActiveKey(note);
+    };
 
 
-    const handleNoteClick = async (note: Note) => {
-        await initAudio();
+    const handleNoteClick = (note: Note) => {
+        if (!isAudioInitialized.current) {
+            initAudio(); // Should already be initialized, but as a fallback
+        }
         if (!isAudioInitialized.current) return;
         
         if (activeKey === note) {
@@ -284,10 +277,15 @@ export default function PadController() {
         }
     };
     
-    if (!isMounted) {
+    if (!isReady) {
       return (
-        <div className="flex h-screen w-screen items-center justify-center">
+        <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-background p-4">
             <Loader2 className="h-12 w-12 animate-spin text-primary"/>
+            <div className="w-full max-w-sm text-center">
+                <p className="text-lg font-semibold text-foreground">Carregando samples...</p>
+                <p className="text-sm text-muted-foreground">Isso pode levar um momento.</p>
+                <Progress value={loadingProgress} className="mt-4" />
+            </div>
         </div>
       );
     }
@@ -318,13 +316,13 @@ export default function PadController() {
                     </div>
                 </div>
 
-                <div className={cn("h-6 flex justify-center items-center gap-2.5 transition-opacity", activeKey || loadingNote ? 'opacity-100' : 'opacity-0')}>
+                <div className={cn("h-6 flex justify-center items-center gap-2.5 transition-opacity", activeKey ? 'opacity-100' : 'opacity-0')}>
                     <div className="flex gap-0.5 h-4 items-end">
                         <div className="w-1 bg-primary animate-bounce [animation-delay:-0.3s]"></div>
                         <div className="w-1 bg-primary animate-bounce [animation-delay:-0.15s]"></div>
                         <div className="w-1 bg-primary animate-bounce"></div>
                     </div>
-                    <span className="text-lg font-bold text-white">{activeKey || loadingNote || '--'}</span>
+                    <span className="text-lg font-bold text-white">{activeKey || '--'}</span>
                 </div>
                 
                 <div className="grid grid-cols-3 gap-2.5">
@@ -332,19 +330,15 @@ export default function PadController() {
                        <Tooltip key={note}>
                           <TooltipTrigger asChild>
                             <button
-                                onMouseEnter={() => preloadNote(note)}
-                                onTouchStart={() => preloadNote(note)}
                                 data-note={note}
                                 onClick={() => handleNoteClick(note)}
                                 className={cn(
                                     "glass-pane relative overflow-hidden rounded-xl py-5 text-xl font-bold transition-all duration-200 hover:bg-white/10 active:scale-95 active:duration-100",
                                     "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                                    activeKey === note && "bg-primary border-primary shadow-[0_0_30px_theme(colors.primary.DEFAULT)] z-10",
-                                    loadingNote === note && 'animate-pulse-loading border-yellow-400 text-yellow-400'
+                                    activeKey === note && "bg-primary border-primary shadow-[0_0_30px_theme(colors.primary.DEFAULT)] z-10"
                                 )}
-                                disabled={loadingNote !== null && loadingNote !== note}
                             >
-                                {loadingNote === note ? <Loader2 className="h-6 w-6 animate-spin mx-auto"/> : note}
+                                {note}
                                 {activeKey === note && <div className="absolute inset-0 bg-radial-gradient from-white/40 to-transparent animate-pulse-glow"></div>}
                             </button>
                             </TooltipTrigger>
@@ -362,3 +356,5 @@ export default function PadController() {
         </TooltipProvider>
     );
 }
+
+    
