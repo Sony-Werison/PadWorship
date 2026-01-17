@@ -16,7 +16,7 @@ export default function ModeSelection() {
                 <Card className="glass-pane hover:border-primary transition-all cursor-pointer h-full flex flex-col group">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-3">
-                            <Database className="text-purple-300 transition-colors group-hover:text-primary" /> Modo Samples
+                            <Database className="text-purple-300 transition-colors group-hover:text-primary" /> Samples
                         </CardTitle>
                         <CardDescription>Qualidade Máxima</CardDescription>
                     </CardHeader>
@@ -29,7 +29,7 @@ export default function ModeSelection() {
                 <Card className="glass-pane hover:border-primary transition-all cursor-pointer h-full flex flex-col group">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-3">
-                            <Cpu className="text-indigo-400 transition-colors group-hover:text-primary" /> Modo Modulação
+                            <Cpu className="text-indigo-400 transition-colors group-hover:text-primary" /> Modulação
                         </CardTitle>
                         <CardDescription>Carregamento Rápido</CardDescription>
                     </CardHeader>
