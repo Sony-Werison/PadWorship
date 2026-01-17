@@ -50,6 +50,7 @@ import {
 type ActivePad = {
     note: Note;
     padGain: GainNode;
+    mixGain: GainNode;
     layerGains: {
         base: GainNode;
         tex1: GainNode;
@@ -361,6 +362,11 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         const frequency = minValue * Math.pow(maxValue / minValue, Math.pow(normalizedValue, C));
         cutoffFilterRef.current.frequency.setTargetAtTime(frequency, audioContextRef.current.currentTime, 0.05);
     }, [cutoff]);
+    useEffect(() => {
+        if (activePadRef.current?.mixGain && audioContextRef.current) {
+            activePadRef.current.mixGain.gain.setTargetAtTime(mix / 100, audioContextRef.current.currentTime, 0.05);
+        }
+    }, [mix]);
      useEffect(() => {
         if (activePadRef.current && audioContextRef.current) {
             const { layerGains } = activePadRef.current;
@@ -443,8 +449,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
         const layerGains = { base: baseLayerGain, tex1: tex1LayerGain, tex2: tex2LayerGain };
 
-        useEffect(() => { if (mixGain && context) mixGain.gain.setTargetAtTime(mix / 100, context.currentTime, 0.05); }, [mix]);
-
         const playbackRate = mode === 'modulation' ? Math.pow(2, semitonesFromC[note] / 12) : 1;
 
         let isLooping = true;
@@ -497,7 +501,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         
         scheduler(context.currentTime);
 
-        activePadRef.current = { note, padGain, layerGains, stopScheduler };
+        activePadRef.current = { note, padGain, mixGain, layerGains, stopScheduler };
         setActiveKey(note);
     };
 
