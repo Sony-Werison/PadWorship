@@ -145,6 +145,29 @@ export default function PadController() {
         return Promise.all(loadPromises);
     }, []);
 
+    const preloadNote = useCallback(async (note: Note) => {
+        const fileNameNote = noteToFileNameMap[note] || note;
+        const firstSamplePath = `/audio/${encodeURIComponent(fileNameNote)} Pad.wav`;
+        
+        // Return if already cached or is currently being loaded by a click
+        if (audioCache.current[firstSamplePath] || loadingNote === note) {
+            return;
+        }
+
+        try {
+            if (!isAudioInitialized.current) {
+                await initAudio();
+            }
+            // Silently preload
+            await loadSamples(note);
+        } catch (error) {
+            // Preloading is best-effort, so we don't show an error toast here.
+            // The user will get a proper error if they click a broken sample.
+            console.error(`Failed to preload samples for ${note}:`, error);
+        }
+    }, [initAudio, loadSamples, loadingNote]);
+
+
     const stopPad = useCallback(() => {
         const context = audioContextRef.current;
         if (!context || !activePadRef.current) return;
@@ -309,6 +332,8 @@ export default function PadController() {
                        <Tooltip key={note}>
                           <TooltipTrigger asChild>
                             <button
+                                onMouseEnter={() => preloadNote(note)}
+                                onTouchStart={() => preloadNote(note)}
                                 data-note={note}
                                 onClick={() => handleNoteClick(note)}
                                 className={cn(
