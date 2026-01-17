@@ -21,6 +21,13 @@ type ActivePad = {
     sources: AudioBufferSourceNode[];
 };
 
+// Map flat notes to sharp filenames
+const noteToFileNameMap: Partial<Record<Note, string>> = {
+    'Ab': 'G#',
+    'Bb': 'A#',
+    'Eb': 'D#',
+};
+
 const FADE_TIME = 1.5; // seconds for crossfade and stop
 
 export default function PadController() {
@@ -113,7 +120,8 @@ export default function PadController() {
         const context = audioContextRef.current;
         if (!context) throw new Error("Audio context not initialized");
         
-        const noteForPath = encodeURIComponent(note);
+        const fileNameNote = noteToFileNameMap[note] || note;
+        const noteForPath = encodeURIComponent(fileNameNote);
         const paths = [
             `/audio/${noteForPath} Pad.wav`,
             `/audio/${noteForPath} Pad2.wav`,
