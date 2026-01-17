@@ -34,7 +34,6 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_PRESETS, type Preset } from '@/lib/presets';
@@ -63,8 +62,6 @@ const noteToFileNameMap: Partial<Record<Note, string>> = {
 };
 const semitonesFromC: Record<Note, number> = { 'C': 0, 'Db': 1, 'D': 2, 'Eb': 3, 'E': 4, 'F': 5, 'Gb': 6, 'G': 7, 'Ab': 8, 'A': 9, 'Bb': 10, 'B': 11 };
 
-const FADE_TIME = 5.0; // seconds for crossfade and stop
-
 export default function PadController({ mode }: { mode: 'full' | 'modulation' }) {
     const [isMounted, setIsMounted] = useState(false);
     const [activeKey, setActiveKey] = useState<Note | null>(null);
@@ -75,6 +72,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const [ambience, setAmbience] = useState(30);
     const [isReady, setIsReady] = useState(false);
     const [loadingProgress, setLoadingProgress] = useState(0);
+    const [fadeTime, setFadeTime] = useState(5);
 
     // Preset State
     const [presets, setPresets] = useState<Preset[]>([]);
@@ -95,7 +93,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const audioContextRef = useRef<AudioContext | null>(null);
     const masterGainRef = useRef<GainNode | null>(null);
     const cutoffFilterRef = useRef<BiquadFilterNode | null>(null);
-    const mixGainRef = useRef<GainNode | null>(null);
     const pannerRef = useRef<StereoPannerNode | null>(null);
     const lfoRef = useRef<OscillatorNode | null>(null);
     const lfoGainRef = useRef<GainNode | null>(null);
@@ -134,13 +131,19 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const handlePresetSelect = (name: string, currentPresets = presets) => {
         const selectedPreset = currentPresets.find(p => p.name === name);
         if (selectedPreset) {
-            const { volume, cutoff, mix, motion, ambience, layers } = selectedPreset.values;
+            const { volume, cutoff, mix, motion, ambience, layers, fadeTime } = selectedPreset.values;
             setVolume(volume);
             setCutoff(cutoff);
             setMix(mix);
             setMotion(motion);
             setAmbience(ambience);
             setActivePresetName(name);
+
+            if (typeof fadeTime !== 'undefined') {
+                setFadeTime(fadeTime);
+            } else {
+                setFadeTime(5); // Fallback for old presets
+            }
 
             if (layers) {
                 setLayerVolumes({
@@ -164,7 +167,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
         const newPreset: Preset = {
             name: nameToSave,
-            values: { volume, cutoff, mix, motion, ambience, layers: layerVolumes }
+            values: { volume, cutoff, mix, motion, ambience, layers: layerVolumes, fadeTime }
         };
         
         setPresets(currentPresets => {
@@ -190,11 +193,15 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                 title: 'Ação não permitida',
                 description: 'Não é possível excluir o preset padrão original.',
             });
+            setIsDeleteDialogOpen(false);
             return;
         }
         const newPresets = presets.filter(p => p.name !== activePresetName);
         setPresets(newPresets);
-        handlePresetSelect(newPresets[0]?.name || 'Padrão', newPresets);
+        const nextPreset = newPresets[0] || DEFAULT_PRESETS[0];
+        if (nextPreset) {
+             handlePresetSelect(nextPreset.name, newPresets);
+        }
         toast({ title: `Preset "${activePresetName}" excluído.` });
         setIsDeleteDialogOpen(false);
     };
@@ -263,7 +270,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
             const masterGain = context.createGain();
             const cutoffFilter = context.createBiquadFilter();
-            const mixGain = context.createGain();
             const lfo = context.createOscillator();
             const lfoGain = context.createGain();
             const panner = context.createStereoPanner();
@@ -289,7 +295,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             audioContextRef.current = context;
             masterGainRef.current = masterGain;
             cutoffFilterRef.current = cutoffFilter;
-            mixGainRef.current = mixGain;
             lfoRef.current = lfo;
             lfoGainRef.current = lfoGain;
             pannerRef.current = panner;
@@ -344,7 +349,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
     // Audio Controls Effects
     useEffect(() => { if (masterGainRef.current && audioContextRef.current) masterGainRef.current.gain.setTargetAtTime(volume / 100, audioContextRef.current.currentTime, 0.05); }, [volume]);
-    useEffect(() => { if (mixGainRef.current && audioContextRef.current) mixGainRef.current.gain.setTargetAtTime(mix / 100, audioContextRef.current.currentTime, 0.05); }, [mix]);
     useEffect(() => { if (lfoGainRef.current && audioContextRef.current) lfoGainRef.current.gain.setTargetAtTime((motion / 100) * 2000, audioContextRef.current.currentTime, 0.05); }, [motion]);
     useEffect(() => { if (pannerLfoGainRef.current && audioContextRef.current) pannerLfoGainRef.current.gain.setTargetAtTime(ambience / 100, audioContextRef.current.currentTime, 0.05);}, [ambience]);
     useEffect(() => {
@@ -372,17 +376,17 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         if (!context || !activePadRef.current) return;
 
         const { padGain, stopScheduler } = activePadRef.current;
-        const stopTime = context.currentTime + FADE_TIME;
+        const stopTime = context.currentTime + fadeTime;
         
         stopScheduler();
         padGain.gain.cancelScheduledValues(context.currentTime);
         padGain.gain.linearRampToValueAtTime(0.0001, stopTime);
 
-        setTimeout(() => { try { padGain.disconnect(); } catch (e) {} }, FADE_TIME * 1000 + 200);
+        setTimeout(() => { try { padGain.disconnect(); } catch (e) {} }, fadeTime * 1000 + 200);
         
         activePadRef.current = null;
         setActiveKey(null);
-    }, []);
+    }, [fadeTime]);
 
     const playPad = (note: Note) => {
         const context = audioContextRef.current;
@@ -405,23 +409,23 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             const oldPad = activePadRef.current;
             oldPad.stopScheduler();
             oldPad.padGain.gain.cancelScheduledValues(context.currentTime);
-            oldPad.padGain.gain.linearRampToValueAtTime(0.0001, context.currentTime + FADE_TIME);
+            oldPad.padGain.gain.linearRampToValueAtTime(0.0001, context.currentTime + fadeTime);
 
             setTimeout(() => { 
                 try {
                     oldPad.padGain.disconnect();
                 } catch (e) {} 
-            }, FADE_TIME * 1000 + 200);
+            }, fadeTime * 1000 + 200);
         }
         
         const padGain = context.createGain();
         padGain.gain.value = 0.0001;
         padGain.connect(masterGainRef.current);
-        padGain.gain.linearRampToValueAtTime(1, context.currentTime + FADE_TIME);
+        padGain.gain.linearRampToValueAtTime(1, context.currentTime + fadeTime);
         
-        const newMixGain = context.createGain();
-        newMixGain.gain.value = mix / 100;
-        newMixGain.connect(padGain);
+        const mixGain = context.createGain();
+        mixGain.gain.value = mix / 100;
+        mixGain.connect(padGain);
 
 
         const baseLayerGain = context.createGain();
@@ -430,13 +434,15 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
         const tex1LayerGain = context.createGain();
         tex1LayerGain.gain.value = layerVolumes.tex1;
-        tex1LayerGain.connect(newMixGain);
+        tex1LayerGain.connect(mixGain);
 
         const tex2LayerGain = context.createGain();
         tex2LayerGain.gain.value = layerVolumes.tex2;
-        tex2LayerGain.connect(newMixGain);
+        tex2LayerGain.connect(mixGain);
 
         const layerGains = { base: baseLayerGain, tex1: tex1LayerGain, tex2: tex2LayerGain };
+
+        useEffect(() => { if (mixGain && context) mixGain.gain.setTargetAtTime(mix / 100, context.currentTime, 0.05); }, [mix]);
 
         const playbackRate = mode === 'modulation' ? Math.pow(2, semitonesFromC[note] / 12) : 1;
 
@@ -448,7 +454,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             
             const duration = baseBuffer.duration;
             const effectiveDuration = duration / playbackRate;
-            const crossfade = FADE_TIME;
+            const crossfade = fadeTime;
 
             playIteration(startTime, effectiveDuration, crossfade);
 
@@ -589,7 +595,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Cutoff</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o brilho do som. Menos brilho para um som mais suave e escuro.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Ajusta o brilho do som. Menos brilho cria um som mais suave e escuro.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
@@ -599,7 +605,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Mix</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Define o volume das camadas de textura que complementam o som base.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Define o volume das camadas de textura que complementam o som principal.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
@@ -609,7 +615,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Motion</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona uma leve ondulação e movimento ao som, tornando-o mais dinâmico.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona uma leve ondulação ao brilho do som, tornando-o mais dinâmico.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Motion" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
@@ -619,7 +625,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Ambience L/R</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria um efeito de movimento panorâmico, movendo o som entre os canais esquerdo e direito.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria um movimento panorâmico, movendo o som entre os canais esquerdo e direito.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Ambience L/R" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} />
@@ -633,6 +639,10 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                             key={note}
                             data-note={note}
                             onClick={() => handleNoteClick(note)}
+                            onMouseEnter={() => {
+                                if (isAudioInitialized.current) return;
+                                initAudio();
+                            }}
                             className={cn(
                                 "glass-pane relative overflow-hidden rounded-xl py-5 text-xl font-bold transition-all duration-200 hover:bg-white/10 active:scale-95 active:duration-100",
                                 "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
@@ -679,6 +689,35 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                         onValueChange={([v]) => setLayerVolumes(prev => ({...prev, tex2: v / 100}))}
                                         max={100}
                                         step={1}
+                                    />
+                                </div>
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                </Accordion>
+
+                <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="transition-settings" className="border-none">
+                        <AccordionTrigger className="glass-pane rounded-2xl px-4 py-3 hover:no-underline">
+                            Configurações de Transição
+                        </AccordionTrigger>
+                        <AccordionContent className="glass-pane rounded-2xl p-4 mt-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 pt-4">
+                                <div className="flex flex-col gap-2 sm:col-span-1">
+                                    <div className="flex justify-center items-center gap-2">
+                                        <label className="text-xs text-muted-foreground uppercase tracking-widest">Crossfade</label>
+                                        <Popover>
+                                            <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
+                                            <PopoverContent align="center" className="w-60 text-sm"><p>Ajusta o tempo da transição suave (fade) entre as notas. Valores maiores criam uma passagem mais lenta e gradual.</p></PopoverContent>
+                                        </Popover>
+                                    </div>
+                                    <Slider
+                                        aria-label="Fade Time"
+                                        value={[fadeTime]}
+                                        onValueChange={([v]) => setFadeTime(v)}
+                                        min={1}
+                                        max={10}
+                                        step={0.5}
                                     />
                                 </div>
                             </div>
