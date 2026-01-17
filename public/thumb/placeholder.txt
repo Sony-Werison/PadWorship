@@ -1,3 +1,0 @@
-Coloque a imagem de thumbnail da sua página aqui.
-
-O nome de arquivo recomendado é 'page-thumb.png'. Esta imagem será usada em pré-visualizações de links (Open Graph) quando você compartilhar a URL do seu aplicativo.

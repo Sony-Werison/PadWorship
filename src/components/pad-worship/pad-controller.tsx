@@ -82,6 +82,8 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
     const [newPresetName, setNewPresetName] = useState("");
     const importFileRef = useRef<HTMLInputElement | null>(null);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
 
     // New State
     const router = useRouter();
@@ -132,13 +134,24 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const handlePresetSelect = (name: string, currentPresets = presets) => {
         const selectedPreset = currentPresets.find(p => p.name === name);
         if (selectedPreset) {
-            const { volume, cutoff, mix, motion, ambience } = selectedPreset.values;
+            const { volume, cutoff, mix, motion, ambience, layers } = selectedPreset.values;
             setVolume(volume);
             setCutoff(cutoff);
             setMix(mix);
             setMotion(motion);
             setAmbience(ambience);
             setActivePresetName(name);
+
+            if (layers) {
+                setLayerVolumes({
+                    base: layers.base,
+                    tex1: layers.tex1,
+                    tex2: layers.tex2
+                });
+            } else {
+                // Fallback for older presets stored in localStorage
+                setLayerVolumes({ base: 1, tex1: 0.7, tex2: 0.7 });
+            }
         }
     };
 
@@ -151,7 +164,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
         const newPreset: Preset = {
             name: nameToSave,
-            values: { volume, cutoff, mix, motion, ambience }
+            values: { volume, cutoff, mix, motion, ambience, layers: layerVolumes }
         };
         
         setPresets(currentPresets => {
@@ -183,6 +196,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         setPresets(newPresets);
         handlePresetSelect(newPresets[0]?.name || 'Padrão', newPresets);
         toast({ title: `Preset "${activePresetName}" excluído.` });
+        setIsDeleteDialogOpen(false);
     };
     
     const handleExportPresets = () => {
@@ -372,7 +386,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
     const playPad = (note: Note) => {
         const context = audioContextRef.current;
-        if (!context || !masterGainRef.current || !mixGainRef.current) return;
+        if (!context || !masterGainRef.current) return;
         
         const noteForSamples = mode === 'modulation' ? 'C' : note;
         const fileNameNote = noteToFileNameMap[noteForSamples] || noteForSamples;
@@ -405,8 +419,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         padGain.connect(masterGainRef.current);
         padGain.gain.linearRampToValueAtTime(1, context.currentTime + FADE_TIME);
         
-        // This is a shared node, must be cleaned up properly.
-        // Let's create a new mixGain for each pad to avoid conflicts.
         const newMixGain = context.createGain();
         newMixGain.gain.value = mix / 100;
         newMixGain.connect(padGain);
@@ -577,7 +589,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Cutoff</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o filtro de frequências (Low-Pass). Abaixe para um som mais abafado.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o brilho do som. Menos brilho para um som mais suave e escuro.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
@@ -587,7 +599,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Mix</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o volume das camadas de textura/atmosfera.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Define o volume das camadas de textura que complementam o som base.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
@@ -597,7 +609,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Motion</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona uma leve flutuação ao som (LFO no filtro).</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona uma leve ondulação e movimento ao som, tornando-o mais dinâmico.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Motion" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
@@ -607,7 +619,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Ambience L/R</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria um efeito de panorâmica automática (AutoPanner).</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria um efeito de movimento panorâmico, movendo o som entre os canais esquerdo e direito.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Ambience L/R" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} />
@@ -707,7 +719,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                             </div>
                                         </PopoverContent>
                                     </Popover>
-                                     <AlertDialog>
+                                     <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
                                         <AlertDialogTrigger asChild>
                                             <Button variant="destructive" size="icon" disabled={presets.find(p => p.name === activePresetName) === DEFAULT_PRESETS.find(d => d.name === activePresetName) && activePresetName === 'Padrão'}>
                                                 <Trash2 className="h-4 w-4" />
