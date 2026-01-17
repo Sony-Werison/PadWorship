@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Tone from 'tone';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Cog, Loader2, Square } from 'lucide-react';
+import { Cog, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NOTES_LIST, FREQUENCIES, PRESETS, type Note, type PresetName } from '@/lib/audio-config';
 import SampleConfigModal from './sample-config-modal';
@@ -26,8 +26,8 @@ export default function PadController() {
     const [mode, setMode] = useState<AppMode>('synth');
     const [activeKey, setActiveKey] = useState<Note | null>(null);
     const [volume, setVolume] = useState(70);
-    const [motion, setMotion] = useState(30);
-    const [ambience, setAmbience] = useState(0);
+    const [cutoff, setCutoff] = useState(100);
+    const [mix, setMix] = useState(0);
     const [currentPreset, setCurrentPreset] = useState<PresetName>('warm');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [sampleConfig, setSampleConfig] = useState<SampleConfig>(
@@ -141,8 +141,6 @@ export default function PadController() {
 
     // Audio Controls Effects
     useEffect(() => { masterGain.current?.volume.rampTo(Tone.gainToDb(volume / 100), 0.1); }, [volume]);
-    useEffect(() => { if (lfo.current) lfo.current.amplitude.value = (motion / 100) * 1800; }, [motion]);
-    useEffect(() => { if (autoPanner.current) autoPanner.current.frequency.value = (ambience / 100) * 2; }, [ambience]);
 
     const handleSaveConfig = (newConfig: SampleConfig) => {
         setSampleConfig(newConfig);
@@ -309,6 +307,23 @@ export default function PadController() {
             </header>
 
             <main className="container mx-auto max-w-2xl flex-1 px-5 flex flex-col gap-4">
+                <div className="glass-pane rounded-2xl p-4 flex flex-col gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
+                        <div className="flex flex-col gap-2">
+                            <label className="text-xs text-muted-foreground uppercase tracking-widest text-center">Volume</label>
+                            <Slider aria-label="Volume" value={[volume]} onValueChange={([v]) => setVolume(v)} max={100} step={1} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <label className="text-xs text-muted-foreground uppercase tracking-widest text-center">Cutoff</label>
+                            <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <label className="text-xs text-muted-foreground uppercase tracking-widest text-center">Mix</label>
+                            <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
+                        </div>
+                    </div>
+                </div>
+
                 <div className="glass-pane rounded-2xl p-4 flex flex-col gap-4 transition-all">
                     {mode === 'sample' ? (
                         <Button onClick={() => setIsModalOpen(true)} variant="outline" className="w-full bg-accent/20 border-accent/50 text-blue-300 hover:bg-accent/30 hover:text-white font-semibold">
@@ -323,16 +338,6 @@ export default function PadController() {
                                         {p.charAt(0).toUpperCase() + p.slice(1)}
                                     </Button>
                                 ))}
-                            </div>
-                            <div className="mt-6 space-y-4">
-                                <div className="grid grid-cols-[120px_1fr] items-center gap-4">
-                                    <label className="text-sm text-muted-foreground text-right">Motion</label>
-                                    <Slider title="Intensidade do movimento do filtro" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
-                                </div>
-                                <div className="grid grid-cols-[120px_1fr] items-center gap-4">
-                                    <label className="text-sm text-muted-foreground text-right">Ambiência L/R</label>
-                                    <Slider title="Velocidade da movimentação estéreo (Auto-Pan)" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} />
-                                </div>
                             </div>
                         </div>
                     )}
@@ -372,13 +377,6 @@ export default function PadController() {
                             )}
                         </Tooltip>
                     ))}
-                </div>
-
-                <div className="glass-pane rounded-2xl p-5 flex flex-col gap-5">
-                    <div className="grid grid-cols-[60px_1fr] items-center gap-4">
-                        <label className="text-sm text-muted-foreground">Volume</label>
-                        <Slider value={[volume]} onValueChange={([v]) => setVolume(v)} max={100} step={1} />
-                    </div>
                 </div>
             </main>
 
