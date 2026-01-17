@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Loader2 } from 'lucide-react';
+import { Loader2, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NOTES_LIST, type Note } from '@/lib/audio-config';
 import { useToast } from '@/hooks/use-toast';
@@ -37,8 +37,8 @@ export default function PadController() {
     const [isMounted, setIsMounted] = useState(false);
     const [activeKey, setActiveKey] = useState<Note | null>(null);
     const [volume, setVolume] = useState(70);
-    const [cutoff, setCutoff] = useState(100);
-    const [mix, setMix] = useState(0);
+    const [motion, setMotion] = useState(20);
+    const [ambience, setAmbience] = useState(30);
     const [isReady, setIsReady] = useState(false);
     const [loadingProgress, setLoadingProgress] = useState(0);
 
@@ -49,6 +49,11 @@ export default function PadController() {
     const masterGainRef = useRef<GainNode | null>(null);
     const cutoffFilterRef = useRef<BiquadFilterNode | null>(null);
     const mixGainRef = useRef<GainNode | null>(null);
+    const pannerRef = useRef<StereoPannerNode | null>(null);
+    const lfoRef = useRef<OscillatorNode | null>(null);
+    const lfoGainRef = useRef<GainNode | null>(null);
+    const pannerLfoRef = useRef<OscillatorNode | null>(null);
+    const pannerLfoGainRef = useRef<GainNode | null>(null);
     const activePadRef = useRef<ActivePad | null>(null);
     const audioCache = useRef<Record<string, AudioBuffer>>({});
     const isAudioInitialized = useRef(false);
@@ -74,18 +79,44 @@ export default function PadController() {
 
             const masterGain = context.createGain();
             const cutoffFilter = context.createBiquadFilter();
-            const mixGain = context.createGain();
+            const mixGain = context.createGain(); // For texture layers
+            mixGain.gain.value = 1; // Textures at full volume
+
+            // Motion (LFO for filter)
+            const lfo = context.createOscillator();
+            const lfoGain = context.createGain();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.5; // Slow rate for motion
+            lfo.connect(lfoGain);
+            lfoGain.connect(cutoffFilter.frequency);
+            lfo.start();
+
+            // Ambience (Auto-panner)
+            const panner = context.createStereoPanner();
+            const pannerLfo = context.createOscillator();
+            const pannerLfoGain = context.createGain();
+            pannerLfo.type = 'sine';
+            pannerLfo.frequency.value = 0.2; // Slower rate for panning
+            pannerLfo.connect(pannerLfoGain);
+            pannerLfoGain.connect(panner.pan);
+            pannerLfo.start();
 
             cutoffFilter.type = 'lowpass';
-            cutoffFilter.frequency.value = context.sampleRate / 2;
+            cutoffFilter.frequency.value = 12000; // Start with a high cutoff
             
             masterGain.connect(cutoffFilter);
-            cutoffFilter.connect(context.destination);
+            cutoffFilter.connect(panner);
+            panner.connect(context.destination);
             
             audioContextRef.current = context;
             masterGainRef.current = masterGain;
             cutoffFilterRef.current = cutoffFilter;
             mixGainRef.current = mixGain;
+            lfoRef.current = lfo;
+            lfoGainRef.current = lfoGain;
+            pannerRef.current = panner;
+            pannerLfoRef.current = pannerLfo;
+            pannerLfoGainRef.current = pannerLfoGain;
 
             isAudioInitialized.current = true;
             console.log('Audio context is ready.');
@@ -152,18 +183,18 @@ export default function PadController() {
     }, [volume]);
 
     useEffect(() => {
-        if (!mixGainRef.current || !audioContextRef.current) return;
-        mixGainRef.current.gain.setTargetAtTime(mix / 100, audioContextRef.current.currentTime, 0.05);
-    }, [mix]);
+        if (!lfoGainRef.current || !audioContextRef.current) return;
+        // Motion slider controls the depth of the LFO on the filter.
+        const lfoDepth = (motion / 100) * 2000;
+        lfoGainRef.current.gain.setTargetAtTime(lfoDepth, audioContextRef.current.currentTime, 0.05);
+    }, [motion]);
 
     useEffect(() => {
-        if (!cutoffFilterRef.current || !audioContextRef.current) return;
-        // Map 0-100 slider to an exponential frequency range (e.g., 40Hz to 20kHz)
-        const minFreq = 40;
-        const maxFreq = audioContextRef.current.sampleRate / 2;
-        const freq = minFreq * Math.pow(maxFreq / minFreq, cutoff / 100);
-        cutoffFilterRef.current.frequency.setTargetAtTime(freq, audioContextRef.current.currentTime, 0.05);
-    }, [cutoff]);
+        if (!pannerLfoGainRef.current || !audioContextRef.current) return;
+        // Ambience slider controls the depth of the auto-panner.
+        const pannerDepth = ambience / 100;
+        pannerLfoGainRef.current.gain.setTargetAtTime(pannerDepth, audioContextRef.current.currentTime, 0.05);
+    }, [ambience]);
 
     const stopPad = useCallback(() => {
         const context = audioContextRef.current;
@@ -302,16 +333,52 @@ export default function PadController() {
                 <div className="glass-pane rounded-2xl p-4 flex flex-col gap-4">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
                         <div className="flex flex-col gap-2">
-                            <label className="text-xs text-muted-foreground uppercase tracking-widest text-center">Volume</label>
+                           <div className="flex justify-center items-center gap-2">
+                                <label className="text-xs text-muted-foreground uppercase tracking-widest">Volume</label>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button className="text-muted-foreground transition-colors hover:text-foreground">
+                                            <HelpCircle className="h-4 w-4" />
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Controla o volume geral do pad.</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </div>
                             <Slider aria-label="Volume" value={[volume]} onValueChange={([v]) => setVolume(v)} max={100} step={1} />
                         </div>
                         <div className="flex flex-col gap-2">
-                            <label className="text-xs text-muted-foreground uppercase tracking-widest text-center">Cutoff</label>
-                            <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
+                            <div className="flex justify-center items-center gap-2">
+                                <label className="text-xs text-muted-foreground uppercase tracking-widest">Motion</label>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button className="text-muted-foreground transition-colors hover:text-foreground">
+                                            <HelpCircle className="h-4 w-4" />
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Adiciona uma leve flutuação ao som (LFO no filtro).</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </div>
+                            <Slider aria-label="Motion" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
                         </div>
                         <div className="flex flex-col gap-2">
-                            <label className="text-xs text-muted-foreground uppercase tracking-widest text-center">Mix</label>
-                            <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
+                            <div className="flex justify-center items-center gap-2">
+                                <label className="text-xs text-muted-foreground uppercase tracking-widest">Ambience L/R</label>
+                                 <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button className="text-muted-foreground transition-colors hover:text-foreground">
+                                            <HelpCircle className="h-4 w-4" />
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Cria um efeito de panorâmica automática (AutoPanner).</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </div>
+                            <Slider aria-label="Ambience L/R" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} />
                         </div>
                     </div>
                 </div>
