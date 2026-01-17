@@ -19,7 +19,7 @@ import { Progress } from '@/components/ui/progress';
 type ActivePad = {
     note: Note;
     padGain: GainNode;
-    sources: AudioBufferSourceNode[];
+    stopScheduler: () => void;
 };
 
 // Map flat notes to sharp filenames
@@ -216,19 +216,17 @@ export default function PadController() {
         const context = audioContextRef.current;
         if (!context || !activePadRef.current) return;
 
-        const { padGain, sources } = activePadRef.current;
+        const { padGain, stopScheduler } = activePadRef.current;
         const stopTime = context.currentTime + FADE_TIME;
         
+        stopScheduler();
+
         padGain.gain.cancelScheduledValues(context.currentTime);
         padGain.gain.linearRampToValueAtTime(0, stopTime);
 
-        sources.forEach(source => {
-          try {
-            source.stop(stopTime)
-          } catch (e) {
-            // may already be stopped
-          }
-        });
+        setTimeout(() => {
+            try { padGain.disconnect(); } catch (e) {}
+        }, FADE_TIME * 1000 + 200);
         
         activePadRef.current = null;
         setActiveKey(null);
@@ -257,56 +255,84 @@ export default function PadController() {
         if (activePadRef.current) {
             const oldPad = activePadRef.current;
             const stopTime = context.currentTime + FADE_TIME;
+
+            oldPad.stopScheduler();
+
             oldPad.padGain.gain.cancelScheduledValues(context.currentTime);
             oldPad.padGain.gain.linearRampToValueAtTime(0, stopTime);
-            oldPad.sources.forEach(source => {
-                try {
-                source.stop(stopTime)
-                } catch(e) {
-                // may already be stopped
-                }
-            });
+            
+            setTimeout(() => {
+                try { oldPad.padGain.disconnect(); } catch (e) {}
+            }, FADE_TIME * 1000 + 200);
         }
         
         // Create new nodes for the new pad
         const padGain = context.createGain();
         padGain.gain.value = 0;
         padGain.connect(masterGainRef.current);
-
-        const baseSource = context.createBufferSource();
-        baseSource.buffer = baseBuffer;
-        baseSource.loop = true;
-
-        const tex1Source = context.createBufferSource();
-        tex1Source.buffer = tex1Buffer;
-        tex1Source.loop = true;
+        padGain.gain.linearRampToValueAtTime(1, context.currentTime + FADE_TIME);
         
-        const tex2Source = context.createBufferSource();
-        tex2Source.buffer = tex2Buffer;
-        tex2Source.loop = true;
-
-        // Connect sources to graph
-        baseSource.connect(padGain);
-        tex1Source.connect(mixGainRef.current);
-        tex2Source.connect(mixGainRef.current);
         mixGainRef.current.connect(padGain);
 
-        // Start all sources and fade in
-        const startTime = context.currentTime;
-        baseSource.start(startTime);
-        tex1Source.start(startTime);
-        tex2Source.start(startTime);
+        let isLooping = true;
+        const timeouts: number[] = [];
+
+        const scheduler = (startTime: number) => {
+            if (!isLooping) return;
+            const duration = baseBuffer.duration;
+            const crossfade = FADE_TIME;
+
+            playIteration(startTime, duration, crossfade);
+
+            const nextStartTime = startTime + duration - crossfade;
+            const delay = (nextStartTime - context.currentTime) * 1000;
+
+            if (delay > 0) {
+                 const timeoutId = window.setTimeout(() => scheduler(nextStartTime), delay);
+                 timeouts.push(timeoutId);
+            } else {
+                 scheduler(nextStartTime);
+            }
+        }
         
-        padGain.gain.linearRampToValueAtTime(1, startTime + FADE_TIME);
+        const playIteration = (startTime: number, duration: number, crossfade: number) => {
+            const baseSource = context.createBufferSource();
+            baseSource.buffer = baseBuffer;
+            const tex1Source = context.createBufferSource();
+            tex1Source.buffer = tex1Buffer;
+            const tex2Source = context.createBufferSource();
+            tex2Source.buffer = tex2Buffer;
+            
+            const iterGain = context.createGain();
+            iterGain.connect(padGain);
+            
+            baseSource.connect(iterGain);
+            tex1Source.connect(mixGainRef.current);
+            tex2Source.connect(mixGainRef.current);
 
-        // Update active pad state
-        const newPad: ActivePad = {
-            note,
-            padGain,
-            sources: [baseSource, tex1Source, tex2Source]
+            iterGain.gain.setValueAtTime(0, startTime);
+            iterGain.gain.linearRampToValueAtTime(1, startTime + crossfade);
+            iterGain.gain.setValueAtTime(1, startTime + duration - crossfade);
+            iterGain.gain.linearRampToValueAtTime(0, startTime + duration);
+
+            baseSource.start(startTime);
+            tex1Source.start(startTime);
+            tex2Source.start(startTime);
+            
+            const cleanupTime = (startTime + duration - context.currentTime + 0.2) * 1000;
+            setTimeout(() => {
+                iterGain.disconnect();
+            }, cleanupTime)
+        }
+
+        const stopScheduler = () => {
+            isLooping = false;
+            timeouts.forEach(clearTimeout);
         };
+        
+        scheduler(context.currentTime);
 
-        activePadRef.current = newPad;
+        activePadRef.current = { note, padGain, stopScheduler };
         setActiveKey(note);
     };
 
