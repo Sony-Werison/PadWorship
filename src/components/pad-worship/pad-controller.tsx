@@ -316,14 +316,7 @@ export default function PadController() {
                     </div>
                 </div>
 
-                <div className={cn("h-6 flex justify-center items-center gap-2.5 transition-opacity", activeKey ? 'opacity-100' : 'opacity-0')}>
-                    <div className="flex gap-0.5 h-4 items-end">
-                        <div className="w-1 bg-primary animate-bounce [animation-delay:-0.3s]"></div>
-                        <div className="w-1 bg-primary animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="w-1 bg-primary animate-bounce"></div>
-                    </div>
-                    <span className="text-lg font-bold text-white">{activeKey || '--'}</span>
-                </div>
+                <div className="my-3"></div>
                 
                 <div className="grid grid-cols-3 gap-2.5">
                     {NOTES_LIST.map(note => (
@@ -356,5 +349,3 @@ export default function PadController() {
         </TooltipProvider>
     );
 }
-
-    
