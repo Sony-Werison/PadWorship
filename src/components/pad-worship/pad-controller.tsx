@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Tone from 'tone';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Cog, Loader2, Music, Square } from 'lucide-react';
+import { Cog, Loader2, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NOTES_LIST, FREQUENCIES, PRESETS, type Note, type PresetName } from '@/lib/audio-config';
 import SampleConfigModal from './sample-config-modal';
@@ -20,16 +20,6 @@ import {
 type AppMode = 'synth' | 'sample';
 type SampleConfig = Record<Note, string>;
 type AudioBuffers = Record<Note, Tone.ToneAudioBuffer>;
-
-// Helper function to create a synth voice
-const createVoice = (voiceConfig: any) => {
-    const filter = new Tone.Filter(voiceConfig.filter);
-    const synth = new Tone.Synth({
-        oscillator: { type: voiceConfig.type, detune: voiceConfig.detune },
-        envelope: { attack: 0.01, decay: 0.1, sustain: 1, release: 0.1 }, // Fast envelope for synth, main envelope controls volume
-    }).connect(filter);
-    return { synth, filter };
-};
 
 export default function PadController() {
     const [isMounted, setIsMounted] = useState(false);
@@ -52,7 +42,14 @@ export default function PadController() {
     const compressor = useRef<Tone.Compressor | null>(null);
     const lfo = useRef<Tone.LFO | null>(null);
     const autoPanner = useRef<Tone.AutoPanner | null>(null);
-    const synth = useRef<Tone.PolySynth | null>(null);
+    
+    // Synth refs for crossfade
+    const synthA = useRef<Tone.PolySynth | null>(null);
+    const synthB = useRef<Tone.PolySynth | null>(null);
+    const crossFadeNode = useRef<Tone.CrossFade | null>(null);
+    const activeSynthRef = useRef<'A' | 'B'>('A');
+
+    // Sample refs
     const activeSamplePlayer = useRef<Tone.Player | null>(null);
     const audioBuffers = useRef<Partial<AudioBuffers>>({});
     const sampleLoadingStatus = useRef<Record<Note, 'idle' | 'loading' | 'loaded' | 'error'>>(
@@ -90,7 +87,8 @@ export default function PadController() {
             compressor.current = new Tone.Compressor(-20, 10).connect(masterGain.current);
             autoPanner.current = new Tone.AutoPanner('4n').connect(compressor.current).start();
             
-            // Setup LFO
+            crossFadeNode.current = new Tone.CrossFade(0).connect(autoPanner.current);
+            
             lfo.current = new Tone.LFO({
               frequency: '8n',
               min: 200,
@@ -110,37 +108,36 @@ export default function PadController() {
         }
     }, [toast]);
 
-    const setupSynth = useCallback(() => {
-        if (synth.current) {
-            synth.current.releaseAll();
-            synth.current.dispose();
-        }
+    const setupSynths = useCallback(() => {
+        if (synthA.current) synthA.current.dispose();
+        if (synthB.current) synthB.current.dispose();
 
         const preset = PRESETS[currentPreset];
         const voiceConfig = preset.voices[0];
 
         const synthOptions = {
-            oscillator: {
-                type: voiceConfig.type,
-            },
+            oscillator: { type: voiceConfig.type },
             envelope: preset.options,
         };
 
-        synth.current = new Tone.PolySynth(Tone.Synth, synthOptions).connect(autoPanner.current!);
-
-        // Set filter properties on all voices.
-        if (voiceConfig.filter) {
-            synth.current.set({ filter: voiceConfig.filter });
+        const createSynth = () => {
+            const newSynth = new Tone.PolySynth(Tone.Synth, synthOptions);
+            if (voiceConfig.filter) {
+                newSynth.set({ filter: voiceConfig.filter });
+            }
+            return newSynth;
         }
+        
+        if (!crossFadeNode.current) return;
+        synthA.current = createSynth().connect(crossFadeNode.current.a);
+        synthB.current = createSynth().connect(crossFadeNode.current.b);
 
-        // The original LFO connection code was incorrect and is removed to prevent crashes.
-        // This means the "Motion" slider will not affect the synth's sound for now.
     }, [currentPreset]);
 
     useEffect(() => {
         if (!audioCtxReady.current) return;
-        setupSynth();
-    }, [setupSynth, isMounted]);
+        setupSynths();
+    }, [setupSynths, isMounted]);
 
     // Audio Controls Effects
     useEffect(() => { masterGain.current?.volume.rampTo(Tone.gainToDb(volume / 100), 0.1); }, [volume]);
@@ -154,7 +151,6 @@ export default function PadController() {
         } catch (e) {
             console.error("Failed to save sample config", e);
         }
-        // Invalidate old buffers
         audioBuffers.current = {};
         Object.keys(sampleLoadingStatus.current).forEach(key => {
             sampleLoadingStatus.current[key as Note] = 'idle';
@@ -163,26 +159,42 @@ export default function PadController() {
 
     const stopPad = useCallback((fadeTime = 2) => {
         if (!audioCtxReady.current) return;
-        if (synth.current) synth.current.releaseAll();
+        if (synthA.current) synthA.current.releaseAll();
+        if (synthB.current) synthB.current.releaseAll();
+
         if (activeSamplePlayer.current) {
             activeSamplePlayer.current.volume.rampTo(-Infinity, fadeTime);
+            activeSamplePlayer.current.stop(`+${fadeTime}`);
+            activeSamplePlayer.current = null;
         }
         setActiveKey(null);
     }, []);
     
     const playSynthNote = useCallback((note: Note) => {
-      if (!synth.current) setupSynth();
-      if (!synth.current) return;
-      
-      const frequency = FREQUENCIES[note];
-      synth.current.releaseAll();
-      synth.current.triggerAttack([frequency, frequency/2]);
-    }, [setupSynth]);
+        if (!crossFadeNode.current || !synthA.current || !synthB.current) {
+            setupSynths();
+        }
+        if (!crossFadeNode.current || !synthA.current || !synthB.current) return;
+
+        const frequency = FREQUENCIES[note];
+        const fadeTime = 1.5;
+
+        const inactiveSynth = activeSynthRef.current === 'A' ? synthB.current : synthA.current;
+        const activeSynth = activeSynthRef.current === 'A' ? synthA.current : synthB.current;
+        const nextFadeVal = activeSynthRef.current === 'A' ? 1 : 0;
+        
+        inactiveSynth.triggerAttack([frequency, frequency/2]);
+        crossFadeNode.current.fade.rampTo(nextFadeVal, fadeTime);
+        activeSynth.releaseAll();
+
+        activeSynthRef.current = activeSynthRef.current === 'A' ? 'B' : 'A';
+    }, [setupSynths]);
 
     const playSampleNote = useCallback(async (note: Note) => {
         const fileId = sampleConfig[note];
         if (!fileId) {
             toast({ variant: 'destructive', title: 'Sample não configurado', description: `Não há um sample do Google Drive configurado para a nota ${note}.` });
+            setActiveKey(null);
             return;
         }
 
@@ -195,16 +207,17 @@ export default function PadController() {
             }
         };
 
+        stopCurrentSample(1.5);
+
         try {
             let buffer = audioBuffers.current[note];
             if (!buffer) {
                 sampleLoadingStatus.current[note] = 'loading';
-                setActiveKey(note); // Update UI to show loading
+                setActiveKey(note); 
                 
-                // This is a simplified, CORS-proxy-dependent way to fetch from Drive
                 const url = `https://docs.google.com/uc?export=download&id=${fileId}`;
                 
-                buffer = await new Promise((resolve, reject) => {
+                buffer = await new Promise<Tone.ToneAudioBuffer>((resolve, reject) => {
                   const playerForLoad = new Tone.Player(url, () => {
                       resolve(playerForLoad.buffer);
                       playerForLoad.dispose();
@@ -216,10 +229,6 @@ export default function PadController() {
                 audioBuffers.current[note] = buffer;
                 sampleLoadingStatus.current[note] = 'loaded';
             }
-
-            if (activeKey === note && activeSamplePlayer.current) return;
-            
-            stopCurrentSample(1.5);
             
             const newPlayer = new Tone.Player(buffer).connect(compressor.current!);
             newPlayer.loop = true;
@@ -237,7 +246,7 @@ export default function PadController() {
             setActiveKey(null);
         }
 
-    }, [sampleConfig, activeKey, toast]);
+    }, [sampleConfig, toast]);
 
     const handleNoteClick = async (note: Note) => {
         await initAudio();
@@ -300,7 +309,6 @@ export default function PadController() {
             </header>
 
             <main className="container mx-auto max-w-2xl flex-1 px-5 flex flex-col gap-4">
-                {/* Control Panel */}
                 <div className="glass-pane rounded-2xl p-4 flex flex-col gap-4 transition-all">
                     {mode === 'sample' ? (
                         <Button onClick={() => setIsModalOpen(true)} variant="outline" className="w-full bg-accent/20 border-accent/50 text-blue-300 hover:bg-accent/30 hover:text-white font-semibold">
@@ -330,7 +338,6 @@ export default function PadController() {
                     )}
                 </div>
 
-                {/* Status Display */}
                 <div className={cn("h-6 flex justify-center items-center gap-2.5 transition-opacity", activeKey ? 'opacity-100' : 'opacity-0')}>
                     <div className="flex gap-0.5 h-4 items-end">
                         <div className="w-1 bg-primary animate-bounce [animation-delay:-0.3s]"></div>
@@ -340,7 +347,6 @@ export default function PadController() {
                     <span className="text-lg font-bold text-white">{activeKey || '--'}</span>
                 </div>
                 
-                {/* Pad Grid */}
                 <div className="grid grid-cols-3 gap-2.5">
                     {NOTES_LIST.map(note => (
                        <Tooltip key={note}>
@@ -368,15 +374,11 @@ export default function PadController() {
                     ))}
                 </div>
 
-                {/* Bottom Controls */}
                 <div className="glass-pane rounded-2xl p-5 flex flex-col gap-5">
                     <div className="grid grid-cols-[60px_1fr] items-center gap-4">
                         <label className="text-sm text-muted-foreground">Volume</label>
                         <Slider value={[volume]} onValueChange={([v]) => setVolume(v)} max={100} step={1} />
                     </div>
-                    <Button onClick={() => stopPad()} className="w-full bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 hover:text-white font-bold uppercase tracking-widest text-base py-6">
-                        <Square className="mr-2 h-4 w-4 fill-current" /> Parar Suavemente
-                    </Button>
                 </div>
             </main>
 
@@ -393,5 +395,3 @@ export default function PadController() {
         </TooltipProvider>
     );
 }
-
-    
