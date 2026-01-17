@@ -362,7 +362,11 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         
         stopScheduler();
         padGain.gain.cancelScheduledValues(context.currentTime);
-        padGain.gain.linearRampToValueAtTime(0, stopTime);
+        padGain.gain.linearRampToValueAtTime(0.0001, stopTime);
+
+        if (mixGainRef.current) {
+            try { mixGainRef.current.disconnect(padGain); } catch (e) {}
+        }
 
         setTimeout(() => { try { padGain.disconnect(); } catch (e) {} }, FADE_TIME * 1000 + 200);
         
@@ -391,12 +395,16 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             const oldPad = activePadRef.current;
             oldPad.stopScheduler();
             oldPad.padGain.gain.cancelScheduledValues(context.currentTime);
-            oldPad.padGain.gain.linearRampToValueAtTime(0, context.currentTime + FADE_TIME);
+            oldPad.padGain.gain.linearRampToValueAtTime(0.0001, context.currentTime + FADE_TIME);
+
+            if (mixGainRef.current) {
+                try { mixGainRef.current.disconnect(oldPad.padGain); } catch (e) {}
+            }
             setTimeout(() => { try { oldPad.padGain.disconnect(); } catch (e) {} }, FADE_TIME * 1000 + 200);
         }
         
         const padGain = context.createGain();
-        padGain.gain.value = 0;
+        padGain.gain.value = 0.0001;
         padGain.connect(masterGainRef.current);
         padGain.gain.linearRampToValueAtTime(1, context.currentTime + FADE_TIME);
         
@@ -454,10 +462,10 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                     iterGain.connect(layerGains.tex2);
                 }
 
-                iterGain.gain.setValueAtTime(0, startTime);
+                iterGain.gain.setValueAtTime(0.0001, startTime);
                 iterGain.gain.linearRampToValueAtTime(1, startTime + crossfade);
                 iterGain.gain.setValueAtTime(1, startTime + duration - crossfade);
-                iterGain.gain.linearRampToValueAtTime(0, startTime + duration);
+                iterGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
 
                 source.start(startTime);
                 source.onended = () => { try { iterGain.disconnect(); source.disconnect(); } catch(e) {} };
