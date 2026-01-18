@@ -6,10 +6,8 @@ export const metadata: Metadata = {
   title: 'Pad Worship Pro',
   description: 'App de Pad contínuo para adoração - Híbrido (Synth + Samples)',
   icons: {
-    icon: [
-        { url: '/favicon/favicon.ico', sizes: 'any' },
-        { url: '/favicon/favicon.svg', type: 'image/svg+xml' },
-    ],
+    icon: '/favicon/favicon.svg',
+    shortcut: '/favicon/favicon.ico',
     apple: '/favicon/apple-touch-icon.png',
   },
   openGraph: {
