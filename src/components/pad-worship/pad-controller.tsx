@@ -294,7 +294,8 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         if (isAudioInitialized.current || !window.AudioContext) return;
         try {
             const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-            if (context.state === 'suspended') await context.resume();
+            // The context must be resumed by a user gesture.
+            // We will do this on the first note click.
 
             const masterGain = context.createGain();
             const cutoffFilter = context.createBiquadFilter();
@@ -540,12 +541,23 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     };
 
     const handleNoteClick = (note: Note) => {
-        if (!isAudioInitialized.current && !isReady) return;
-        if (!isAudioInitialized.current) initAudio();
-        if (!isAudioInitialized.current) return;
-        
-        if (activeKey === note) stopPad();
-        else playPad(note);
+        if (!isReady || !audioContextRef.current) return;
+    
+        const context = audioContextRef.current;
+
+        const action = () => {
+            if (activeKey === note) {
+                stopPad();
+            } else {
+                playPad(note);
+            }
+        };
+
+        if (context.state === 'suspended') {
+            context.resume().then(action);
+        } else {
+            action();
+        }
     };
     
     if (!isReady) {
@@ -706,10 +718,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                             key={note}
                             data-note={note}
                             onClick={() => handleNoteClick(note)}
-                            onMouseEnter={() => {
-                                if (isAudioInitialized.current) return;
-                                initAudio();
-                            }}
                             className={cn(
                                 "glass-pane relative overflow-hidden rounded-xl py-5 text-xl font-bold transition-all duration-200 hover:bg-white/10 active:scale-95 active:duration-100",
                                 "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
