@@ -94,6 +94,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const router = useRouter();
     const [isBackDialogOpen, setIsBackDialogOpen] = useState(false);
     const [layerVolumes, setLayerVolumes] = useState({ base: 1, tex1: 0.7, tex2: 0.7 });
+    const [isAmbienceSupported, setIsAmbienceSupported] = useState(true);
 
     const { toast } = useToast();
     
@@ -264,6 +265,9 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     // --- AUDIO LOGIC ---
     useEffect(() => {
         setIsMounted(true);
+        if (typeof window !== 'undefined' && !window.StereoPannerNode) {
+            setIsAmbienceSupported(false);
+        }
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
         if(isIOS) {
              toast({
@@ -284,41 +288,47 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             const cutoffFilter = context.createBiquadFilter();
             const lfo = context.createOscillator();
             const lfoGain = context.createGain();
-            const panner = context.createStereoPanner();
-            const pannerLfo = context.createOscillator();
-            const pannerLfoGain = context.createGain();
-
+            
             lfo.type = 'sine';
             lfo.frequency.value = 0.5;
             lfo.connect(lfoGain).connect(cutoffFilter.frequency);
             lfo.start();
-
-            pannerLfo.type = 'sine';
-            pannerLfo.frequency.value = 0.2;
-            pannerLfo.connect(pannerLfoGain).connect(panner.pan);
-            pannerLfo.start();
-
-            cutoffFilter.type = 'lowpass';
             
+            cutoffFilter.type = 'lowpass';
             masterGain.connect(cutoffFilter);
-            cutoffFilter.connect(panner);
-            panner.connect(context.destination);
+
+            if (isAmbienceSupported) {
+                const panner = context.createStereoPanner();
+                const pannerLfo = context.createOscillator();
+                const pannerLfoGain = context.createGain();
+
+                pannerLfo.type = 'sine';
+                pannerLfo.frequency.value = 0.2;
+                pannerLfo.connect(pannerLfoGain).connect(panner.pan);
+                pannerLfo.start();
+                
+                cutoffFilter.connect(panner);
+                panner.connect(context.destination);
+
+                pannerRef.current = panner;
+                pannerLfoRef.current = pannerLfo;
+                pannerLfoGainRef.current = pannerLfoGain;
+            } else {
+                cutoffFilter.connect(context.destination);
+            }
             
             audioContextRef.current = context;
             masterGainRef.current = masterGain;
             cutoffFilterRef.current = cutoffFilter;
             lfoRef.current = lfo;
             lfoGainRef.current = lfoGain;
-            pannerRef.current = panner;
-            pannerLfoRef.current = pannerLfo;
-            pannerLfoGainRef.current = pannerLfoGain;
 
             isAudioInitialized.current = true;
         } catch (e) {
             console.error('Could not start audio context', e);
             toast({ variant: 'destructive', title: 'Erro de Áudio', description: 'Não foi possível iniciar o áudio.' });
         }
-    }, [toast]);
+    }, [toast, isAmbienceSupported]);
 
     const preloadSamples = useCallback(async () => {
         await initAudio();
@@ -641,13 +651,22 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                         </div>
                         <div className="flex flex-col gap-2">
                             <div className="flex justify-center items-center gap-2">
-                                <label className="text-xs text-muted-foreground uppercase tracking-widest">Ambience L/R</label>
-                                <Popover>
-                                    <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Cria um efeito estéreo que move o som de um lado para o outro.</p></PopoverContent>
+                                <label className={cn("text-xs text-muted-foreground uppercase tracking-widest", !isAmbienceSupported && "opacity-50")}>Ambience L/R</label>
+                                 <Popover>
+                                    <PopoverTrigger asChild disabled={!isAmbienceSupported}>
+                                        <button className="text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
+                                            <HelpCircle className="h-4 w-4" />
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent align="center" className="w-60 text-sm">
+                                        {isAmbienceSupported
+                                            ? <p>Cria um efeito estéreo que move o som de um lado para o outro.</p>
+                                            : <p>Este efeito não é suportado pelo seu navegador.</p>
+                                        }
+                                    </PopoverContent>
                                 </Popover>
                             </div>
-                            <Slider aria-label="Ambience L/R" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} />
+                            <Slider aria-label="Ambience L/R" value={[ambience]} onValueChange={([v]) => setAmbience(v)} max={100} step={1} disabled={!isAmbienceSupported} />
                         </div>
                          <div className="flex flex-col gap-2">
                             <div className="flex justify-center items-center gap-2">
