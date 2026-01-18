@@ -68,6 +68,18 @@ const AVG_SAMPLE_SIZE_MB = 0.8; // Tamanho médio estimado de um arquivo de samp
 const FULL_MODE_SAMPLES = 36;   // 12 notas * 3 camadas
 const MODULATION_MODE_SAMPLES = 3; // 1 nota * 3 camadas
 
+// Helper for older Safari versions that don't support the promise-based decodeAudioData
+function decodeAudioDataAsync(context: AudioContext, arrayBuffer: ArrayBuffer): Promise<AudioBuffer> {
+    return new Promise((resolve, reject) => {
+        // The callback-based version is supported in all browsers.
+        context.decodeAudioData(arrayBuffer, 
+            (buffer) => resolve(buffer),
+            (error) => reject(error)
+        );
+    });
+}
+
+
 export default function PadController({ mode }: { mode: 'full' | 'modulation' }) {
     const [isMounted, setIsMounted] = useState(false);
     const [activeKey, setActiveKey] = useState<Note | null>(null);
@@ -349,7 +361,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                         const response = await fetch(path);
                         if (response.ok) {
                             const arrayBuffer = await response.arrayBuffer();
-                            audioCache.current[path] = await audioContextRef.current.decodeAudioData(arrayBuffer);
+                            audioCache.current[path] = await decodeAudioDataAsync(audioContextRef.current, arrayBuffer);
                         } else {
                              throw new Error(`Failed to fetch: ${response.statusText}`);
                         }
