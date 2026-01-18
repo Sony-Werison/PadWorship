@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Loader2, HelpCircle, Download, Upload, Save, Trash2, ArrowLeft } from 'lucide-react';
@@ -64,6 +64,10 @@ const noteToFileNameMap: Partial<Record<Note, string>> = {
 };
 const semitonesFromC: Record<Note, number> = { 'C': 0, 'Db': 1, 'D': 2, 'Eb': 3, 'E': 4, 'F': 5, 'Gb': 6, 'G': 7, 'Ab': 8, 'A': 9, 'Bb': 10, 'B': 11 };
 
+const AVG_SAMPLE_SIZE_MB = 0.8; // Tamanho médio estimado de um arquivo de sample
+const FULL_MODE_SAMPLES = 36;   // 12 notas * 3 camadas
+const MODULATION_MODE_SAMPLES = 3; // 1 nota * 3 camadas
+
 export default function PadController({ mode }: { mode: 'full' | 'modulation' }) {
     const [isMounted, setIsMounted] = useState(false);
     const [activeKey, setActiveKey] = useState<Note | null>(null);
@@ -74,6 +78,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const [ambience, setAmbience] = useState(30);
     const [isReady, setIsReady] = useState(false);
     const [loadingProgress, setLoadingProgress] = useState(0);
+    const [loadedMb, setLoadedMb] = useState(0);
     const [fadeTime, setFadeTime] = useState(5);
 
     // Preset State
@@ -103,6 +108,11 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const activePadRef = useRef<ActivePad | null>(null);
     const audioCache = useRef<Record<string, AudioBuffer>>({});
     const isAudioInitialized = useRef(false);
+
+    const totalSizeMb = useMemo(() => {
+        const sampleCount = mode === 'full' ? FULL_MODE_SAMPLES : MODULATION_MODE_SAMPLES;
+        return sampleCount * AVG_SAMPLE_SIZE_MB;
+    }, [mode]);
 
     // --- PRESET LOGIC ---
     useEffect(() => {
@@ -338,12 +348,14 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                     console.error(`Error preloading sample at ${path}:`, error);
                 } finally {
                     loadedCount++;
-                    setLoadingProgress((loadedCount / totalSamples) * 100);
+                    const progressPercent = (loadedCount / totalSamples) * 100;
+                    setLoadingProgress(progressPercent);
+                    setLoadedMb((progressPercent / 100) * totalSizeMb);
                 }
             }
         }
         setIsReady(true);
-    }, [isMounted, initAudio, mode]);
+    }, [isMounted, initAudio, mode, totalSizeMb]);
 
     useEffect(() => {
         if(isMounted) preloadSamples();
@@ -522,7 +534,9 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                 <p className="text-lg font-semibold text-foreground">
                     Carregando samples... ({mode === 'modulation' ? 'Modo Rápido' : 'Modo Qualidade'})
                 </p>
-                <p className="text-sm text-muted-foreground">Isso pode levar um momento.</p>
+                <p className="text-sm text-muted-foreground">
+                    Baixando: {loadedMb.toFixed(1)} MB / {totalSizeMb.toFixed(1)} MB
+                </p>
                 <Progress value={loadingProgress} className="mt-4" />
             </div>
         </div>
