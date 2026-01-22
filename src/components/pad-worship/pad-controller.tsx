@@ -45,17 +45,14 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 
 
 type ActivePad = {
     note: Note;
     padGain: GainNode;
     mixGain: GainNode;
-    layerGains: {
-        base: GainNode;
-        tex1: GainNode;
-        tex2: GainNode;
-    };
     stopScheduler: () => void;
 };
 
@@ -105,7 +102,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     // New State
     const router = useRouter();
     const [isBackDialogOpen, setIsBackDialogOpen] = useState(false);
-    const [layerVolumes, setLayerVolumes] = useState({ base: 1, tex1: 0.7, tex2: 0.7 });
+    const [baseLayer, setBaseLayer] = useState(1);
     const [isAmbienceSupported, setIsAmbienceSupported] = useState(true);
 
     const { toast } = useToast();
@@ -156,7 +153,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const handlePresetSelect = (name: string, currentPresets = presets) => {
         const selectedPreset = currentPresets.find(p => p.name === name);
         if (selectedPreset) {
-            const { volume, cutoff, mix, motion, ambience, layers, fadeTime } = selectedPreset.values;
+            const { volume, cutoff, mix, motion, ambience, fadeTime, baseLayer } = selectedPreset.values;
             setVolume(volume);
             setCutoff(cutoff);
             setMix(mix);
@@ -170,15 +167,10 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                 setFadeTime(5); // Fallback for old presets
             }
 
-            if (layers) {
-                setLayerVolumes({
-                    base: layers.base,
-                    tex1: layers.tex1,
-                    tex2: layers.tex2
-                });
+            if (typeof baseLayer !== 'undefined') {
+                setBaseLayer(baseLayer);
             } else {
-                // Fallback for older presets stored in localStorage
-                setLayerVolumes({ base: 1, tex1: 0.7, tex2: 0.7 });
+                setBaseLayer(1); // Fallback for old presets
             }
         }
     };
@@ -192,7 +184,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
 
         const newPreset: Preset = {
             name: nameToSave,
-            values: { volume, cutoff, mix, motion, ambience, layers: layerVolumes, fadeTime }
+            values: { volume, cutoff, mix, motion, ambience, fadeTime, baseLayer }
         };
         
         setPresets(currentPresets => {
@@ -280,22 +272,17 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         if (typeof window !== 'undefined' && !window.StereoPannerNode) {
             setIsAmbienceSupported(false);
         }
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        if(isIOS) {
-             toast({
-                title: 'Aviso para iOS',
-                description: 'No iPhone/iPad, verifique se o botão "Silêncio" (lateral) está desligado.',
-                duration: 6000,
-            });
-        }
-    }, [toast]);
+    }, []);
     
     const initAudio = useCallback(async () => {
         if (isAudioInitialized.current || !window.AudioContext) return;
         try {
-            const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-            // The context must be resumed by a user gesture.
-            // We will do this on the first note click.
+            // Suspend context on creation for better cross-browser compatibility, especially on iOS.
+            const context = new (window.AudioContext || (window as any).webkitAudioContext)({ latencyHint: 'interactive' });
+             if (context.state === 'suspended') {
+                 // The context must be resumed by a user gesture.
+                 // We will do this on the first note click.
+            }
 
             const masterGain = context.createGain();
             const cutoffFilter = context.createBiquadFilter();
@@ -402,16 +389,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             activePadRef.current.mixGain.gain.setTargetAtTime(mix / 100, audioContextRef.current.currentTime, 0.05);
         }
     }, [mix]);
-     useEffect(() => {
-        if (activePadRef.current && audioContextRef.current) {
-            const { layerGains } = activePadRef.current;
-            const now = audioContextRef.current.currentTime;
-            layerGains.base.gain.setTargetAtTime(layerVolumes.base, now, 0.05);
-            layerGains.tex1.gain.setTargetAtTime(layerVolumes.tex1, now, 0.05);
-            layerGains.tex2.gain.setTargetAtTime(layerVolumes.tex2, now, 0.05);
-        }
-    }, [layerVolumes]);
-
 
     const stopPad = useCallback(() => {
         const context = audioContextRef.current;
@@ -438,15 +415,17 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         const fileNameNote = noteToFileNameMap[noteForSamples] || noteForSamples;
         const noteForPath = encodeURIComponent(fileNameNote);
 
-        const baseBuffer = audioCache.current[`/audio/${noteForPath} Pad.wav`];
-        const tex1Buffer = audioCache.current[`/audio/${noteForPath} Pad2.wav`];
-        const tex2Buffer = audioCache.current[`/audio/${noteForPath} Pad3.wav`];
-
-        if (!baseBuffer || !tex1Buffer || !tex2Buffer) {
+        const buffers = [
+            audioCache.current[`/audio/${noteForPath} Pad.wav`],
+            audioCache.current[`/audio/${noteForPath} Pad2.wav`],
+            audioCache.current[`/audio/${noteForPath} Pad3.wav`]
+        ];
+        
+        if (buffers.some(b => !b)) {
             toast({ variant: 'destructive', title: 'Erro de Sample', description: `Não foi possível carregar os áudios para a nota ${note}.` });
             return;
         }
-            
+
         if (activePadRef.current) {
             const oldPad = activePadRef.current;
             oldPad.stopScheduler();
@@ -454,9 +433,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
             oldPad.padGain.gain.linearRampToValueAtTime(0.0001, context.currentTime + fadeTime);
 
             setTimeout(() => { 
-                try {
-                    oldPad.padGain.disconnect();
-                } catch (e) {} 
+                try { oldPad.padGain.disconnect(); } catch (e) {} 
             }, fadeTime * 1000 + 200);
         }
         
@@ -469,21 +446,6 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         mixGain.gain.value = mix / 100;
         mixGain.connect(padGain);
 
-
-        const baseLayerGain = context.createGain();
-        baseLayerGain.gain.value = layerVolumes.base;
-        baseLayerGain.connect(padGain);
-
-        const tex1LayerGain = context.createGain();
-        tex1LayerGain.gain.value = layerVolumes.tex1;
-        tex1LayerGain.connect(mixGain);
-
-        const tex2LayerGain = context.createGain();
-        tex2LayerGain.gain.value = layerVolumes.tex2;
-        tex2LayerGain.connect(mixGain);
-
-        const layerGains = { base: baseLayerGain, tex1: tex1LayerGain, tex2: tex2LayerGain };
-
         const playbackRate = mode === 'modulation' ? Math.pow(2, semitonesFromC[note] / 12) : 1;
 
         let isLooping = true;
@@ -492,7 +454,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         const scheduler = (startTime: number) => {
             if (!isLooping) return;
             
-            const duration = baseBuffer.duration;
+            const duration = buffers[0]!.duration;
             const effectiveDuration = duration / playbackRate;
             const crossfade = fadeTime;
 
@@ -506,20 +468,26 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         }
         
         const playIteration = (startTime: number, duration: number, crossfade: number) => {
-            [baseBuffer, tex1Buffer, tex2Buffer].forEach((buffer, index) => {
+            buffers.forEach((buffer, index) => {
+                if (!buffer) return;
+                const sampleNumber = index + 1;
+
                 const source = context.createBufferSource();
                 source.buffer = buffer;
                 source.playbackRate.value = playbackRate;
 
                 const iterGain = context.createGain();
                 source.connect(iterGain);
+                
+                const layerGain = context.createGain();
+                iterGain.connect(layerGain);
 
-                if (index === 0) {
-                    iterGain.connect(layerGains.base);
-                } else if (index === 1) {
-                    iterGain.connect(layerGains.tex1);
+                if (sampleNumber === baseLayer) {
+                    layerGain.gain.value = 1.0; // Base layer volume
+                    layerGain.connect(padGain); // Connects directly to main output, bypassing mix
                 } else {
-                    iterGain.connect(layerGains.tex2);
+                    layerGain.gain.value = 0.7; // Texture layer volume
+                    layerGain.connect(mixGain); // Connects to the mix bus
                 }
 
                 iterGain.gain.setValueAtTime(0.0001, startTime);
@@ -528,7 +496,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                 iterGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
 
                 source.start(startTime);
-                source.onended = () => { try { iterGain.disconnect(); source.disconnect(); } catch(e) {} };
+                source.onended = () => { try { iterGain.disconnect(); layerGain.disconnect(); source.disconnect(); } catch(e) {} };
             });
         }
 
@@ -536,7 +504,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         
         scheduler(context.currentTime);
 
-        activePadRef.current = { note, padGain, mixGain, layerGains, stopScheduler };
+        activePadRef.current = { note, padGain, mixGain, stopScheduler };
         setActiveKey(note);
     };
 
@@ -648,7 +616,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Cutoff</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Abre e fecha o filtro, controlando o brilho do som.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o brilho do som. Valores altos soam mais abertos.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
@@ -658,7 +626,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Mix</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Define a mistura entre o som principal e as camadas de textura.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Mistura as camadas de textura ao som principal.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
@@ -668,7 +636,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Motion</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona movimento e dinâmica ao timbre, modulando o filtro.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona um movimento lento e dinâmico ao timbre.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Motion" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
@@ -732,41 +700,24 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                 <Accordion type="single" collapsible className="w-full">
                     <AccordionItem value="item-1" className="border-none">
                         <AccordionTrigger className="glass-pane rounded-2xl px-4 py-3 hover:no-underline">
-                            Controles de Camada Individuais
+                            Seleção de Camada Base
                         </AccordionTrigger>
                         <AccordionContent className="glass-pane rounded-2xl p-4 mt-2">
-                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 pt-4">
-                                <div className="flex flex-col gap-2">
-                                    <label className="text-xs text-center text-muted-foreground uppercase tracking-widest">Base</label>
-                                    <Slider
-                                        aria-label="Volume Base"
-                                        value={[layerVolumes.base * 100]}
-                                        onValueChange={([v]) => setLayerVolumes(prev => ({...prev, base: v / 100}))}
-                                        max={100}
-                                        step={1}
-                                    />
+                             <p className="text-sm text-muted-foreground mb-4">Selecione qual sample servirá como a camada principal (base). Os outros dois atuarão como texturas, controlados pelo slider "Mix".</p>
+                            <RadioGroup value={String(baseLayer)} onValueChange={(val) => setBaseLayer(Number(val))} className="flex flex-col sm:flex-row gap-4 sm:gap-8 justify-center pt-2">
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="1" id="r1" />
+                                    <Label htmlFor="r1">Sample 1 (Padrão)</Label>
                                 </div>
-                                <div className="flex flex-col gap-2">
-                                    <label className="text-xs text-center text-muted-foreground uppercase tracking-widest">Textura 1</label>
-                                    <Slider
-                                        aria-label="Volume Textura 1"
-                                        value={[layerVolumes.tex1 * 100]}
-                                        onValueChange={([v]) => setLayerVolumes(prev => ({...prev, tex1: v / 100}))}
-                                        max={100}
-                                        step={1}
-                                    />
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="2" id="r2" />
+                                    <Label htmlFor="r2">Sample 2</Label>
                                 </div>
-                                <div className="flex flex-col gap-2">
-                                    <label className="text-xs text-center text-muted-foreground uppercase tracking-widest">Textura 2</label>
-                                    <Slider
-                                        aria-label="Volume Textura 2"
-                                        value={[layerVolumes.tex2 * 100]}
-                                        onValueChange={([v]) => setLayerVolumes(prev => ({...prev, tex2: v / 100}))}
-                                        max={100}
-                                        step={1}
-                                    />
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="3" id="r3" />
+                                    <Label htmlFor="r3">Sample 3</Label>
                                 </div>
-                            </div>
+                            </RadioGroup>
                         </AccordionContent>
                     </AccordionItem>
                 </Accordion>
