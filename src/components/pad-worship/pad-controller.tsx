@@ -877,5 +877,3 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         </>
     );
 }
-
-    
