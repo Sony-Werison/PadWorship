@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, HelpCircle, Download, Upload, Save, Trash2, ArrowLeft } from 'lucide-react';
+import { Loader2, HelpCircle, Download, Upload, Save, Trash2, ArrowLeft, PictureInPicture } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NOTES_LIST, type Note } from '@/lib/audio-config';
 import { useToast } from '@/hooks/use-toast';
@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/accordion";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 type ActivePad = {
@@ -104,6 +105,10 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     const [isBackDialogOpen, setIsBackDialogOpen] = useState(false);
     const [baseLayer, setBaseLayer] = useState(1);
     const [isAmbienceSupported, setIsAmbienceSupported] = useState(true);
+
+    const [isPiPSupported, setIsPiPSupported] = useState(false);
+    const [isPiPActive, setIsPiPActive] = useState(false);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
 
     const { toast } = useToast();
     
@@ -266,11 +271,72 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         reader.readAsText(file);
     };
 
+    const togglePiP = async () => {
+        if (!videoRef.current) return;
+
+        try {
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+                setIsPiPActive(false);
+            } else {
+                await videoRef.current.requestPictureInPicture();
+                setIsPiPActive(true);
+            }
+        } catch (error) {
+            console.error("PiP Error:", error);
+            toast({
+                variant: 'destructive',
+                title: 'Erro de Picture-in-Picture',
+                description: 'Não foi possível ativar o modo. Seu navegador pode não ser compatível.'
+            });
+        }
+    };
+
     // --- AUDIO LOGIC ---
     useEffect(() => {
         setIsMounted(true);
         if (typeof window !== 'undefined' && !window.StereoPannerNode) {
             setIsAmbienceSupported(false);
+        }
+
+        if (typeof document !== 'undefined' && 'pictureInPictureEnabled' in document && document.pictureInPictureEnabled) {
+            setIsPiPSupported(true);
+
+            const video = videoRef.current;
+            const canvas = document.createElement('canvas');
+            // @ts-ignore - captureStream is experimental but works in modern browsers
+            if (video && typeof canvas.captureStream === 'function') {
+                canvas.width = canvas.height = 1; // 1x1 canvas
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.fillStyle = 'black';
+                    ctx.fillRect(0, 0, 1, 1);
+                }
+                
+                // @ts-ignore
+                video.srcObject = canvas.captureStream();
+                video.play().catch(() => { /* Autoplay might be blocked, that's fine */ });
+
+                const onEnterPiP = () => setIsPiPActive(true);
+                const onLeavePiP = () => {
+                    setIsPiPActive(false);
+                    // Try to resume playback if PiP is closed, as some browsers pause it.
+                    video.play().catch(() => {});
+                };
+
+                video.addEventListener('enterpictureinpicture', onEnterPiP);
+                video.addEventListener('leavepictureinpicture', onLeavePiP);
+
+                // Check if already in PiP when component mounts
+                if (document.pictureInPictureElement === video) {
+                    setIsPiPActive(true);
+                }
+
+                return () => {
+                    video.removeEventListener('enterpictureinpicture', onEnterPiP);
+                    video.removeEventListener('leavepictureinpicture', onLeavePiP);
+                };
+            }
         }
     }, []);
     
@@ -547,6 +613,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
     
     return (
         <>
+        <video ref={videoRef} muted loop playsInline style={{ display: 'none' }} />
         <input type="file" ref={importFileRef} onChange={handleImportPresets} accept=".json" className="hidden" />
         <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
              <DialogContent>
@@ -595,6 +662,26 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                 <h1 className="text-3xl font-extrabold tracking-tighter bg-gradient-to-r from-purple-300 to-indigo-400 text-transparent bg-clip-text">
                     Pad Worship Pro
                 </h1>
+                {isPiPSupported && (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="absolute right-5 top-1/2 -translate-y-1/2"
+                                    onClick={togglePiP}
+                                    aria-label="Manter áudio em segundo plano"
+                                >
+                                    <PictureInPicture className={cn("h-4 w-4", isPiPActive && "text-primary")} />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>{isPiPActive ? 'Sair do modo PiP' : 'Manter áudio em 2º plano'}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
             </header>
 
             <main className="container mx-auto max-w-4xl flex-1 px-5 flex flex-col gap-4">
@@ -606,7 +693,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Volume</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o volume geral do pad.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Ajusta o volume geral do pad.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Volume" value={[volume]} onValueChange={([v]) => setVolume(v)} max={100} step={1} />
@@ -616,7 +703,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Cutoff</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o brilho do som. Valores altos soam mais abertos.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Controla o brilho. Sons mais abertos (brilhantes) ou fechados (escuros).</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Cutoff" value={[cutoff]} onValueChange={([v]) => setCutoff(v)} max={100} step={1} />
@@ -626,7 +713,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Mix</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Mistura as camadas de textura ao som principal.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Mistura as camadas de textura (samples secundários) ao som principal.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Mix" value={[mix]} onValueChange={([v]) => setMix(v)} max={100} step={1} />
@@ -636,7 +723,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Motion</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona um movimento lento e dinâmico ao timbre.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Adiciona um movimento lento e dinâmico ao filtro de brilho (cutoff).</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider aria-label="Motion" value={[motion]} onValueChange={([v]) => setMotion(v)} max={100} step={1} />
@@ -652,7 +739,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                     </PopoverTrigger>
                                     <PopoverContent align="center" className="w-60 text-sm">
                                         {isAmbienceSupported
-                                            ? <p>Cria um efeito estéreo que move o som de um lado para o outro.</p>
+                                            ? <p>Cria um efeito estéreo que move o som lentamente de um lado para o outro.</p>
                                             : <p>Este efeito não é suportado pelo seu navegador.</p>
                                         }
                                     </PopoverContent>
@@ -665,7 +752,7 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
                                 <label className="text-xs text-muted-foreground uppercase tracking-widest">Crossfade</label>
                                 <Popover>
                                     <PopoverTrigger asChild><button className="text-muted-foreground transition-colors hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></PopoverTrigger>
-                                    <PopoverContent align="center" className="w-60 text-sm"><p>Ajusta o tempo da transição suave (fade) entre as notas.</p></PopoverContent>
+                                    <PopoverContent align="center" className="w-60 text-sm"><p>Ajusta o tempo de transição (fade in/out) entre as notas.</p></PopoverContent>
                                 </Popover>
                             </div>
                             <Slider
@@ -790,3 +877,5 @@ export default function PadController({ mode }: { mode: 'full' | 'modulation' })
         </>
     );
 }
+
+    
